@@ -1,0 +1,54 @@
+application {
+  config {
+    baseName lenside,
+    applicationType monolith,
+    databaseType sql,
+    buildTool maven,
+    authenticationType jwt,
+    packageName com.lenside,
+    serverPort 8080,
+    clientFramework angular
+  }
+  entities Cluster, Namespace, JupyterHubInstance, AppUser
+}
+
+enum Role {
+  DEV,
+  ADMIN
+}
+
+entity AppUser {
+  username String required,
+  role Role required
+}
+
+entity JupyterHubInstance {
+  url String required,
+  status String required
+}
+
+entity Namespace {
+  name String required,
+  vip String required,
+  url String required
+}
+
+entity Cluster {
+  name String required
+}
+
+relationship OneToMany {
+  Cluster{namespaces} to Namespace{cluster}
+}
+
+relationship OneToOne {
+  Namespace{jupyterHubInstance} to JupyterHubInstance
+}
+
+relationship ManyToMany {
+  JupyterHubInstance{appUsers} to AppUser{instances}
+}
+
+paginate all with pagination
+dto all with mapstruct
+service all with serviceClass
