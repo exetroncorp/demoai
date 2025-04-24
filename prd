@@ -1,1 +1,163 @@
-Product Requirements Document: LensIDE Clone (JupyterHub Manager)Version: 1.1Date: 2025-04-241. Introduction & GoalThis document outlines the requirements for LensIDE Clone (codename: Lenside), a web application designed to simplify the management and interaction with JupyterHub instances deployed within distinct namespaces, conceptually similar to Kubernetes clusters and namespaces.The primary goal is to provide a user-friendly interface for administrators and developers to view, access, manage users, and interact via a terminal with environments associated with JupyterHub instances running in different namespaces. This project aims to emulate some aspects of the Lens IDE's cluster/namespace management capabilities but focuses specifically on JupyterHub instances and associated environments.2. Target AudienceDevOps Engineers / Platform Administrators: Responsible for setting up and managing the underlying infrastructure and JupyterHub deployments.Data Scientists / Developers: Users who need access to specific JupyterHub instances and potentially a terminal environment within different namespaces for their work.3. Key Features (MVP - Minimum Viable Product)3.1. Cluster Management (Admin)[F01] Create Cluster: Ability to register a new cluster entity in the system (defining its name).[F02] View Clusters: List all registered clusters.[F03] Update Cluster: Modify the name of an existing cluster.[F04] Delete Cluster: Remove a cluster definition (should potentially cascade or prevent deletion if namespaces exist, TBD).3.2. Namespace Management (Admin)[F05] Create Namespace: Ability to add a new namespace associated with a specific cluster, including its name, VIP (optional), and URL (optional).[F06] View Namespaces: List all namespaces, potentially filterable by cluster. View details of a specific namespace.[F07] Update Namespace: Modify the details (name, vip, url) of an existing namespace.[F08] Delete Namespace: Remove a namespace definition (should potentially cascade or prevent deletion if a JupyterHub instance is linked, TBD).3.3. JupyterHub Instance Management (Admin/Dev based on Role)[F09] Associate JupyterHub Instance: Link a JupyterHub instance (by providing its access URL and initial status) to a specific namespace upon namespace creation or update (1:1 relationship).[F10] View JupyterHub Instance: Display the URL and status of the JupyterHub instance associated with a selected namespace.[F11] Update JupyterHub Instance: Modify the URL or status of an associated JupyterHub instance.[F12] Access JupyterHub: Provide a direct link (opening in a new tab) to the JupyterHub instance's URL.3.4. User Management & Access Control (Admin)[F13] View Users: List all registered users (UserProfile entity + JHipster User).[F14] Assign User to Namespace: Grant a specific user (UserProfile) access to a specific namespace with a defined role (DEV or ADMIN via NamespaceUserAccess).[F15] Manage Namespace Access: View which users have access to a specific namespace and their roles. Revoke access or change roles.[F16] Role-Based Access:Admins: Can perform all CRUD operations on Clusters, Namespaces, JupyterHub Instances, and User Access. Can access terminals in any namespace.Devs: Can view Clusters and Namespaces they have access to. Can view and access the JupyterHub instance within their assigned namespaces. Can access terminals within their assigned namespaces.3.5. Authentication[F17] User Login: Secure user login using JWT.[F18] User Registration: (Optional for MVP, Admins might create users initially).3.6. Web Terminal Access (Admin/Dev based on Role)[F19] Launch Terminal: Provide a button/link within the context of an accessible Namespace to open an interactive web-based terminal.[F20] Terminal Interaction: Utilize WebSockets and a frontend library (e.g., Xterm.js) to provide a functional terminal connected to a server-side process associated with the selected namespace's environment. Input/output should be streamed over the WebSocket connection.[F21] Secure Connection: Ensure the WebSocket connection for the terminal is authenticated and authorized based on the user's session and their access rights to the specific namespace.4. Architecture & Technology StackDevelopment Methodology:Domain-Driven Design (DDD): Structure the backend around core domains (Cluster Management, Namespace Management, JupyterHub Management, User Access, Terminal Management). Define aggregates, entities, value objects, repositories, and domain services.Clean Architecture: Separate concerns into distinct layers (Domain, Application, Infrastructure, Presentation/API) for maintainability and testability.Test-Driven Development (TDD): Write unit and integration tests before implementation code for the backend (Spring Boot). Use JUnit 5 and Mockito.Behavior-Driven Development (BDD): Define acceptance criteria using Gherkin syntax (Cucumber) and implement corresponding step definitions to drive integration and end-to-end tests.Backend:Framework: Spring Boot, Spring WebSocketLanguage: Java 17+Database: SQL (H2 for Dev/Test, PostgreSQL recommended for Prod). Note: SQLite was requested but requires custom JHipster configuration and may have limitations.API: RESTful APIs generated by JHipster, WebSocket endpoints for terminal interaction.Build Tool: MavenFrontend:Framework: AngularLanguage: TypeScriptTerminal Library: Xterm.js (or similar)Styling: Sass, standard JHipster styling/Bootstrap.Code Generation: JHipster (using the generated JDL)5. Development Process (Step-by-Step using TDD/BDD)The backend development will follow TDD principles for each feature (including WebSocket handlers):BDD Feature Definition: Define the feature using Cucumber (e.g., User accesses terminal for namespace X).TDD - Controller/WebSocket Handler Test: Write failing tests for the API/WebSocket endpoints.TDD - Service Test: Write failing tests for the service layer logic.TDD - Domain Logic (if complex): Write tests for domain entities or services.Implementation - Domain: Implement necessary domain entities/value objects.Implementation - Repository: Define repository interfaces.Implementation - Service: Implement service layer logic to pass service tests.Implementation - Controller/WebSocket Handler: Implement endpoint logic to pass endpoint tests.BDD Step Implementation: Implement Cucumber step definitions to pass BDD scenarios.Refactor: Refactor code and tests while keeping them green.Repeat: Move to the next feature or scenario.6. Non-Functional RequirementsUsability: Intuitive interface for resource management and terminal access.Security: Standard JHipster security + secure WebSocket handling (authentication, authorization per namespace).Performance: Responsive UI, efficient WebSocket communication. Implement pagination.Maintainability: Adherence to Clean Architecture, DDD, TDD/BDD, and JHipster conventions.Scalability: Consider potential load on WebSocket connections if many users access terminals concurrently (may require specific backend infrastructure considerations beyond MVP).7. Future Enhancements (Post-MVP)Real-time status updates for JupyterHub instances.Direct interaction with Kubernetes API to fetch real cluster/namespace/pod information and potentially exec into specific pods via the terminal.Integration with JupyterHub API for more granular user management.More sophisticated dashboard views.Advanced filtering and searching capabilities.Audit logging for terminal sessions.Customizable terminal environments.8. Open Questions / ConsiderationsConfirm feasibility/limitations of SQLite vs. PostgreSQL.Define precise cascading rules for deletions.How is JupyterHub status determined? (Manual update initially).What specific server-side process will the web terminal connect to? (Needs definition - e.g., a dedicated container, exec into an existing pod, etc.). This significantly impacts implementation complexity.Refine exact permissions for the DEV role regarding terminal access/capabilities.
+Product Requirements Document: LensIDE Clone (JupyterHub Manager)
+Version: 1.1
+Date: 2025-04-24
+
+1. Introduction & Goal
+This document outlines the requirements for LensIDE Clone (codename: Lenside), a web application designed to simplify the management and interaction with JupyterHub instances deployed within distinct namespaces, conceptually similar to Kubernetes clusters and namespaces.
+
+The primary goal is to provide a user-friendly interface for administrators and developers to view, access, manage users, and interact via a terminal with environments associated with JupyterHub instances running in different namespaces. This project aims to emulate some aspects of the Lens IDE's cluster/namespace management capabilities but focuses specifically on JupyterHub instances and associated environments.
+
+2. Target Audience
+DevOps Engineers / Platform Administrators: Responsible for setting up and managing the underlying infrastructure and JupyterHub deployments.
+
+Data Scientists / Developers: Users who need access to specific JupyterHub instances and potentially a terminal environment within different namespaces for their work.
+
+3. Key Features (MVP - Minimum Viable Product)
+3.1. Cluster Management (Admin)
+[F01] Create Cluster: Ability to register a new cluster entity in the system (defining its name).
+
+[F02] View Clusters: List all registered clusters.
+
+[F03] Update Cluster: Modify the name of an existing cluster.
+
+[F04] Delete Cluster: Remove a cluster definition (should potentially cascade or prevent deletion if namespaces exist, TBD).
+
+3.2. Namespace Management (Admin)
+[F05] Create Namespace: Ability to add a new namespace associated with a specific cluster, including its name, VIP (optional), and URL (optional).
+
+[F06] View Namespaces: List all namespaces, potentially filterable by cluster. View details of a specific namespace.
+
+[F07] Update Namespace: Modify the details (name, vip, url) of an existing namespace.
+
+[F08] Delete Namespace: Remove a namespace definition (should potentially cascade or prevent deletion if a JupyterHub instance is linked, TBD).
+
+3.3. JupyterHub Instance Management (Admin/Dev based on Role)
+[F09] Associate JupyterHub Instance: Link a JupyterHub instance (by providing its access URL and initial status) to a specific namespace upon namespace creation or update (1:1 relationship).
+
+[F10] View JupyterHub Instance: Display the URL and status of the JupyterHub instance associated with a selected namespace.
+
+[F11] Update JupyterHub Instance: Modify the URL or status of an associated JupyterHub instance.
+
+[F12] Access JupyterHub: Provide a direct link (opening in a new tab) to the JupyterHub instance's URL.
+
+3.4. User Management & Access Control (Admin)
+[F13] View Users: List all registered users (UserProfile entity + JHipster User).
+
+[F14] Assign User to Namespace: Grant a specific user (UserProfile) access to a specific namespace with a defined role (DEV or ADMIN via NamespaceUserAccess).
+
+[F15] Manage Namespace Access: View which users have access to a specific namespace and their roles. Revoke access or change roles.
+
+[F16] Role-Based Access:
+
+Admins: Can perform all CRUD operations on Clusters, Namespaces, JupyterHub Instances, and User Access. Can access terminals in any namespace.
+
+Devs: Can view Clusters and Namespaces they have access to. Can view and access the JupyterHub instance within their assigned namespaces. Can access terminals within their assigned namespaces.
+
+3.5. Authentication
+[F17] User Login: Secure user login using JWT.
+
+[F18] User Registration: (Optional for MVP, Admins might create users initially).
+
+3.6. Web Terminal Access (Admin/Dev based on Role)
+[F19] Launch Terminal: Provide a button/link within the context of an accessible Namespace to open an interactive web-based terminal.
+
+[F20] Terminal Interaction: Utilize WebSockets and a frontend library (e.g., Xterm.js) to provide a functional terminal connected to a server-side process associated with the selected namespace's environment. Input/output should be streamed over the WebSocket connection.
+
+[F21] Secure Connection: Ensure the WebSocket connection for the terminal is authenticated and authorized based on the user's session and their access rights to the specific namespace.
+
+4. Architecture & Technology Stack
+Development Methodology:
+
+Domain-Driven Design (DDD): Structure the backend around core domains (Cluster Management, Namespace Management, JupyterHub Management, User Access, Terminal Management). Define aggregates, entities, value objects, repositories, and domain services.
+
+Clean Architecture: Separate concerns into distinct layers (Domain, Application, Infrastructure, Presentation/API) for maintainability and testability.
+
+Test-Driven Development (TDD): Write unit and integration tests before implementation code for the backend (Spring Boot). Use JUnit 5 and Mockito.
+
+Behavior-Driven Development (BDD): Define acceptance criteria using Gherkin syntax (Cucumber) and implement corresponding step definitions to drive integration and end-to-end tests.
+
+Backend:
+
+Framework: Spring Boot, Spring WebSocket
+
+Language: Java 17+
+
+Database: SQL (H2 for Dev/Test, PostgreSQL recommended for Prod). Note: SQLite was requested but requires custom JHipster configuration and may have limitations.
+
+API: RESTful APIs generated by JHipster, WebSocket endpoints for terminal interaction.
+
+Build Tool: Maven
+
+Frontend:
+
+Framework: Angular
+
+Language: TypeScript
+
+Terminal Library: Xterm.js (or similar)
+
+Styling: Sass, standard JHipster styling/Bootstrap.
+
+Code Generation: JHipster (using the generated JDL)
+
+5. Development Process (Step-by-Step using TDD/BDD)
+The backend development will follow TDD principles for each feature (including WebSocket handlers):
+
+BDD Feature Definition: Define the feature using Cucumber (e.g., User accesses terminal for namespace X).
+
+TDD - Controller/WebSocket Handler Test: Write failing tests for the API/WebSocket endpoints.
+
+TDD - Service Test: Write failing tests for the service layer logic.
+
+TDD - Domain Logic (if complex): Write tests for domain entities or services.
+
+Implementation - Domain: Implement necessary domain entities/value objects.
+
+Implementation - Repository: Define repository interfaces.
+
+Implementation - Service: Implement service layer logic to pass service tests.
+
+Implementation - Controller/WebSocket Handler: Implement endpoint logic to pass endpoint tests.
+
+BDD Step Implementation: Implement Cucumber step definitions to pass BDD scenarios.
+
+Refactor: Refactor code and tests while keeping them green.
+
+Repeat: Move to the next feature or scenario.
+
+6. Non-Functional Requirements
+Usability: Intuitive interface for resource management and terminal access.
+
+Security: Standard JHipster security + secure WebSocket handling (authentication, authorization per namespace).
+
+Performance: Responsive UI, efficient WebSocket communication. Implement pagination.
+
+Maintainability: Adherence to Clean Architecture, DDD, TDD/BDD, and JHipster conventions.
+
+Scalability: Consider potential load on WebSocket connections if many users access terminals concurrently (may require specific backend infrastructure considerations beyond MVP).
+
+7. Future Enhancements (Post-MVP)
+Real-time status updates for JupyterHub instances.
+
+Direct interaction with Kubernetes API to fetch real cluster/namespace/pod information and potentially exec into specific pods via the terminal.
+
+Integration with JupyterHub API for more granular user management.
+
+More sophisticated dashboard views.
+
+Advanced filtering and searching capabilities.
+
+Audit logging for terminal sessions.
+
+Customizable terminal environments.
+
+8. Open Questions / Considerations
+Confirm feasibility/limitations of SQLite vs. PostgreSQL.
+
+Define precise cascading rules for deletions.
+
+How is JupyterHub status determined? (Manual update initially).
+
+What specific server-side process will the web terminal connect to? (Needs definition - e.g., a dedicated container, exec into an existing pod, etc.). This significantly impacts implementation complexity.
+
+Refine exact permissions for the DEV role regarding terminal access/capabilities.
