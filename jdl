@@ -1,0 +1,120 @@
+/**
+ * Base application configuration
+ */
+application {
+  config {
+    // Base application settings
+    applicationType monolith        // Single application
+    baseName lenside               // Application name
+    packageName com.lenside         // Root package
+    authenticationType jwt        // Use JWT for authentication
+    buildTool maven                 // Use Maven as build tool
+    databaseType sql               // Use SQL database
+    devDatabaseType h2Disk         // Use H2 disk-based for development
+    prodDatabaseType postgresql    // Use PostgreSQL for production (Note: SQLite requires custom configuration)
+    cacheProvider ehcache           // Use Ehcache for caching
+    enableHibernateCache true       // Enable Hibernate 2nd level cache
+    serverPort 8080                 // Default server port
+    clientFramework angular         // Use Angular for frontend
+    useSass true                    // Use Sass for CSS preprocessing
+    enableTranslation false         // Disable i18n for simplicity initially
+    nativeLanguage en               // Default language
+    testFrameworks [cypress, cucumber] // Include Cypress E2E and Cucumber BDD tests
+    websocket spring-websocket      // Enable Spring WebSocket support <--- UPDATED
+    searchEngine false              // Disable Elasticsearch for now
+    messageBroker false             // Disable Kafka/Pulsar for now
+    serviceDiscoveryType false      // No service discovery needed for monolith
+  }
+  entities * // Apply config to all entities below
+}
+
+/**
+ * Represents a Kubernetes-like cluster hosting namespaces.
+ */
+entity Cluster {
+  name String required unique minlength(3) // Name of the cluster
+}
+
+/**
+ * Represents a namespace within a cluster, analogous to a K8s namespace.
+ * It contains configuration and a JupyterHub instance.
+ */
+entity Namespace {
+  name String required minlength(3) // Name of the namespace (should be unique within a cluster, handled by logic)
+  vip String                        // Virtual IP associated with the namespace (optional)
+  url String                        // Access URL for services within the namespace (optional)
+}
+
+/**
+ * Represents a deployed JupyterHub instance within a namespace.
+ */
+entity JupyterHubInstance {
+  url String required unique        // Access URL for the JupyterHub UI
+  status String                     // Status of the instance (e.g., Running, Pending, Error)
+}
+
+/**
+ * Represents a user who can interact with the system.
+ */
+entity UserProfile { // Renamed from User to avoid conflict with JHipster's built-in User entity
+  username String required unique   // User's login name
+  // Note: Role management often uses JHipster's built-in Authority entity.
+  // We can add a specific role enum here if needed for application logic beyond basic auth.
+}
+
+/**
+ * Enum for user roles within the context of namespace/JupyterHub management.
+ * This might supplement JHipster's standard ROLE_ADMIN, ROLE_USER.
+ */
+enum Role {
+  DEV, ADMIN
+}
+
+/**
+ * Defines the relationship between Users and Namespaces (Access Control).
+ * A user can have access to multiple namespaces, and a namespace can be accessed by multiple users.
+ * We associate the 'Role' with this relationship.
+ */
+entity NamespaceUserAccess {
+  role Role required // Role of the user specifically for this namespace
+}
+
+
+// --- Relationships ---
+
+relationship OneToMany {
+  /** A Cluster can contain multiple Namespaces */
+  Cluster{namespaces} to Namespace{cluster(name) required}
+}
+
+relationship OneToOne {
+  /** Each Namespace has exactly one JupyterHub instance */
+  Namespace{jupyterHubInstance required} to JupyterHubInstance{namespace required}
+}
+
+relationship ManyToMany {
+   /** A Namespace can be accessed by multiple Users, and a User can access multiple Namespaces */
+   Namespace{users(username)} to UserProfile{namespaces(name)} with NamespaceUserAccess
+   // Note: JHipster's built-in User entity handles authentication/authorization.
+   // UserProfile is for application-specific user details if needed beyond the built-in one.
+   // The relationship entity 'NamespaceUserAccess' stores the role specific to that pairing.
+}
+
+// --- Service and DTO Configuration ---
+
+// Use service classes for business logic (Clean Architecture / DDD)
+service * with serviceClass
+
+// Use DTOs (Data Transfer Objects) for API layer (MapStruct)
+dto * with mapstruct
+
+// --- Pagination ---
+
+// Apply pagination to lists
+paginate Cluster, Namespace, JupyterHubInstance, UserProfile with pagination
+
+// --- Filtering ---
+// Enable filtering for relevant entities
+// filter Cluster, Namespace, JupyterHubInstance, UserProfile // Uncomment if filtering via JPA criteria is desired
+
+
