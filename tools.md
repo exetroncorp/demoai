@@ -157,3 +157,33 @@ curl https://api.openai.com/v1/responses \
   "user": null,
   "metadata": {}
 }
+
+
+
+
+{
+  "id": "chatcmpl-1234567890abcdefghijklm",
+  "object": "chat.completion",
+  "created": 1677652288,
+  "model": "gpt-3.5-turbo-0613",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "function_call": {
+          "name": "builtinls",
+          "arguments": "{\n  \"path\": \"/kkk\"\n}"
+        }
+      },
+      "logprobs": null,
+      "finish_reason": "function_call"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 20,
+    "total_tokens": 30
+  }
+}
