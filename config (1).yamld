@@ -1,0 +1,19 @@
+name: Local Assistant
+version: 1.0.0
+schema: v1
+models:
+  - name: Codestral
+    provider: mistral
+    model: codestral-latest
+    apiKey: pLpPHnjU7B0BHdRHrzwxseyU8VPHtKo0
+    requestOptions:
+      proxy: https://127.0.0.1:8080
+      verifySsl: false
+  - name: litellm
+    provider: mistral
+    model: codestral-latest
+    apiKey: pLpPHnjU7B0BHdRHrzwxseyU8VPHtKo0
+    baseUrl: http://127.0.0.1:8000/v1
+    # requestOptions:
+    #   proxy: https://127.0.0.1:8000
+    #   verifySsl: false

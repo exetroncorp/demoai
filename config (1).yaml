@@ -1,0 +1,21 @@
+model_list:
+  - model_name: codestral-latest # This is the name you'll use to call the model via the proxy
+    litellm_params:
+      model: codestral/codestral-latest # The actual model string LiteLLM uses for Mistral's Codestral
+      api_key: pLpPHnjU7B0BHdRHrzwxseyU8VPHtKo0
+      # exort CODETRSL_API8KEU 
+      
+          
+
+
+litellm_settings:
+  drop_params: True # Good practice to drop unsupported OpenAI params when proxying
+  set_verbose: True # Enables detailed logging from LiteLLM. Set to False for less noise.
+  # For even more detailed (and potentially very verbose) debugging:
+  success_callback: ["litellm_payload_logger.log_success_event"]
+  failure_callback: ["litellm_payload_logger.log_failure_event"]
+
+# Optional: General settings for the proxy server itself
+# server_settings:
+#   port: 8000 # Default port, change if needed
+#   host: "0.0.0.0" # Listen on all available network interfaces
