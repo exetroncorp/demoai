@@ -1,0 +1,4 @@
+fast-alpr>=0.1.2
+streamlit
+opencv-python
+opencv-contrib-python-headless
