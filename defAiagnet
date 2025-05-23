@@ -1,0 +1,6 @@
+What Are AI Agents?
+At their core, AI agents are large language model (LLM)-powered systems designed to achieve objectives across multiple steps, leveraging tools autonomously as needed — that is, without requiring user prompts for every action. This ability to independently and dynamically navigate diverse and complex series of tasks makes AI agents distinct from deterministic, single-task systems.
+
+Expanding on this, AI agents are capable of making decisions and taking actions within set boundaries. They interact with their environment — whether through APIs, databases, or other tools — and adapt to shifting inputs or goals, in order to perform tasks that range from routine automation to complex problem-solving.
+
+These systems excel in handling open-ended tasks within dynamic environments — particularly when directives are provided in natural language, as is the case with conversational applications like virtual assistants or in-app helpers. With limited or no human supervision, AI agents can orchestrate actions, manage workflows, and access external resources to accomplish their goals.
