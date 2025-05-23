@@ -13,7 +13,7 @@ import openai
 import os
 
 # Mistral API Configuration (using OpenAI client with Mistral endpoint)
-MISTRAL_API_KEY = "pLpPHnjU7B0BHdRHrzwxseyU8VPHtKo0"
+MISTRAL_API_KEY = "*****"
 MISTRAL_BASE_URL = "https://codestral.mistral.ai/v1"
 
 # Available models
