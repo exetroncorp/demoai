@@ -1,0 +1,41 @@
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "proxy": {
+        "server": "http://proxy-server.com:8080",
+        "username": "your-username",
+        "password": "your-password"
+      },
+      "headless": true,
+      "args": [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-web-security",
+        "--disable-features=VizDisplayCompositor"
+      ]
+    },
+    "contextOptions": {
+      "viewport": { "width": 1280, "height": 720 }
+    }
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8931
+  },
+  "capabilities": ["core", "tabs", "pdf", "wait"]
+}
+
+
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--config", "path/to/your-config.json"
+      ]
+    }
+  }
+}
