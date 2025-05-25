@@ -39,3 +39,107 @@
     }
   }
 }
+
+
+
+
+
+When Chrome/Chromium shows CGU (Conditions Générales d'Utilisation / Terms of Service) acceptance dialogs, you can bypass these using Chrome flags. Here are several approaches:
+
+## Chrome Flags to Add
+
+Add these flags to your configuration:
+
+```json
+{
+  "browser": {
+    "browserName": "chromium",
+    "launchOptions": {
+      "args": [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-default-apps",
+        "--disable-popup-blocking",
+        "--disable-translate",
+        "--disable-background-timer-throttling",
+        "--disable-renderer-backgrounding",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-client-side-phishing-detection",
+        "--disable-sync",
+        "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+        "--disable-ipc-flooding-protection",
+        "--metrics-recording-only",
+        "--no-report-upload",
+        "--disable-breakpad"
+      ]
+    }
+  }
+}
+```
+
+## Key Flags for CGU/Terms Bypass
+
+The most important ones for bypassing terms acceptance:
+
+```bash
+--no-first-run                    # Skip first run experience
+--no-default-browser-check        # Don't check if Chrome is default
+--disable-default-apps            # Don't install default apps
+--disable-sync                    # Disable Google account sync prompts
+--disable-translate               # Disable translation prompts
+```
+
+## Using User Data Directory
+
+You can also use a persistent user data directory where you accept terms once:
+
+```json
+{
+  "browser": {
+    "launchOptions": {
+      "args": [
+        "--user-data-dir=/path/to/chrome-profile",
+        "--no-first-run"
+      ]
+    }
+  }
+}
+```
+
+## Command Line Version
+
+If using command line args directly:
+
+```json
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--no-sandbox",
+        "--user-data-dir", "/tmp/chrome-profile"
+      ]
+    }
+  }
+}
+```
+
+## Alternative: Use Different Browser
+
+You could also switch to Firefox which typically has fewer startup prompts:
+
+```json
+{
+  "browser": {
+    "browserName": "firefox",
+    "launchOptions": {
+      "headless": true
+    }
+  }
+}
+```
+
+The `--no-first-run` and `--no-default-browser-check` flags are usually the most effective for bypassing initial Chrome setup dialogs and terms acceptance prompts.
