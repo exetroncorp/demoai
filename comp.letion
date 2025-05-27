@@ -1,0 +1,41 @@
+curl -H "accept: application/json" -H "authorization: Bearer pLpPHnjU7B0BHdRHrzwxseyU8VPHtKo0" -H "content-type: application/json" -H "user-agent: node-fetch" -H "x-api-key: pLpPHnjU7B0BHdRHrzwxseyU8VPHtKo0" -H "Host: codestral.mistral.ai" --data-binary "{\"model\":\"codestral-latest\",\"prompt\":\"//a nodejs server tht run on port 1898 and display hello world + os infos\r\n\r\nconst http = require('http');\r\nconst os = require('os');\r\nconst hostname = '127.0.0.1';\r\nconst port = 1898;\r\nconst server = http.createServer((req, res) => {\r\n    res.statusCode = 200;\r\n    res.setHeader('Content-Type', 'text/plain');\r\n    res.end('Hello World\\n' + JSON.stringify(os.cpus()));\r\n});\r\n\r\nfunction displayCurrentTime(){\",\"suffix\":\"\r\n\r\n\r\n}\r\n\r\nserver.listen(port, hostname, () => {\r\n    console.log(`Server running at http://${hostname}:${port}/`);\r\n});\r\n\r\n\r\n\r\n\r\n\r\n\",\"max_tokens\":4096,\"temperature\":0.01,\"stop\":[\"[PREFIX]\",\"[SUFFIX]\",\"\n+++++ \",\"/src/\",\"#- coding: utf-8\",\"```\"],\"stream\":true}" --compressed "https://codestral.mistral.ai/v1/fim/completions"
+
+----------------------
+data: {"id":"e59fc6dae9b946548192f45b8c18e858","object":"chat.completion.chunk","created":1748378889,"model":"codestral-latest","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"e59fc6dae9b946548192f45b8c18e858","object":"chat.completion.chunk","created":1748378889,"model":"codestral-latest","choices":[{"index":0,"delta":{"content":"\n    console.log(new Date());"},"finish_reason":"stop"}],"usage":{"prompt_tokens":198,"total_tokens":207,"completion_tokens":9}}
+
+data: [DONE]
+--------------------
+
+{
+	"model": "codestral-latest",
+	"prompt": "//a nodejs server tht run on port 1898 and display hello world + os infos\r\n\r\nconst http = require('http');\r\nconst os = require('os');\r\nconst hostname = '127.0.0.1';\r\nconst port = 1898;\r\nconst server = http.createServer((req, res) => {\r\n    res.statusCode = 200;\r\n    res.setHeader('Content-Type', 'text/plain');\r\n    res.end('Hello World\\n' + JSON.stringify(os.cpus()));\r\n});\r\n\r\nfunction displayCurrentTime(){",
+	"suffix": "\r\n\r\n\r\n}\r\n\r\nserver.listen(port, hostname, () => {\r\n    console.log(`Server running at http://${hostname}:${port}/`);\r\n});\r\n\r\n\r\n\r\n\r\n\r\n",
+	"max_tokens": 4096,
+	"temperature": 0.01,
+	"stop": ["[PREFIX]", "[SUFFIX]", "\n+++++ ", "/src/", "#- coding: utf-8", "```"],
+	"stream": true
+}
+
+
+------------------------
+//a nodejs server tht run on port 1898 and display hello world + os infos
+
+const http = require('http');
+const os = require('os');
+const hostname = '127.0.0.1';
+const port = 1898;
+const server = http.createServer((req, res) => {
+    res.statusCode = 200;
+    res.setHeader('Content-Type', 'text/plain');
+    res.end('Hello World\n' + JSON.stringify(os.cpus()));
+});
+
+function displayCurrentTime(){
+
+}
+
+server.listen(port, hostname, () => {
+    console.log(`Server running at http://${hostname}:${port}/`);
+});
