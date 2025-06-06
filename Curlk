@@ -1,0 +1,13 @@
+# Get OpenShift API URL
+CLUSTER_URL=$(oc config view --minify -o jsonpath='{.clusters[0].cluster.server}')
+
+# Get OpenShift token from IBM Cloud IAM (temporary token)
+IAM_TOKEN=$(ibmcloud iam oauth-tokens --output JSON | jq -r '.iam_token')
+
+# Get OpenShift bearer token from IBM Cloud IAM token
+OCP_TOKEN=$(curl -s -k -X POST "$CLUSTER_URL/oauth/token" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "grant_type=urn:ibm:params:oauth:grant-type:apikey&apikey=$IBM_CLOUD_API_KEY" | jq -r '.access_token')
+
+# Now login to OpenShift using oc
+oc login --token="$OCP_TOKEN" --server="$CLUSTER_URL"
