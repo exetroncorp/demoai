@@ -218,3 +218,93 @@ If you need to interact with the OpenShift API directly (for example, scripting 
 [14] https://github.com/IBM/ibmcloud-iam-operator
 [15] https://www.redhat.com/en/blog/cicd-with-openshift
 [16] https://www.redhat.com/en/technologies/cloud-computing/openshift/ci-cd
+
+
+
+
+
+
+
+Great, I’ll look into how you can fully automate deployments to IBM Cloud ROKS (OpenShift) using only your IBM Cloud API key in a CI/CD pipeline—without needing to manually run `oc login` or retrieve tokens from the console.
+
+I’ll find out the best practices for authenticating to OpenShift in this scenario, including any options to generate a persistent login token or use a service account securely. I’ll get back to you shortly with the results.
+
+
+# Automating IBM Cloud ROKS Deployments with IAM API Keys
+
+Red Hat OpenShift on IBM Cloud (ROKS) integrates with IBM Cloud IAM, so you can use an IBM Cloud IAM API key or Service ID to log in non-interactively. In practice, you create (or use) an IAM API key, then use the IBM Cloud CLI to authenticate and retrieve your cluster’s credentials. For example, an API key (for a user or Service ID) can be used with: `ibmcloud login --apikey <API_KEY>`. After logging in, run the `ibmcloud oc cluster config` command to download the cluster’s **kubeconfig**. This command merges the cluster context into your kubeconfig (either `~/.kube/config` or the file pointed by the `KUBECONFIG` env var) so that `oc` and other tools can immediately target the cluster. For example:
+
+```bash
+ibmcloud login --apikey $IBMCLOUD_API_KEY -r $REGION -g $RESOURCE_GROUP
+ibmcloud oc cluster config --cluster $CLUSTER_NAME [--endpoint private] 
+```
+
+This sets up TLS certificates and endpoints for `oc` (the OpenShift CLI) and `kubectl`.  Note: if your pipeline runner is outside the IBM Cloud private network but your cluster has a private endpoint, you may need `--endpoint private` with VPN or Direct Link networking.
+
+## Logging in to the Cluster via `oc` (API Key or Token)
+
+Once the IBM Cloud CLI has configured the cluster context, you can log into the cluster API using the API key. The OpenShift CLI supports using `apikey` as a user:
+
+```bash
+oc login -u apikey -p $IBMCLOUD_API_KEY [--server=https://<master_URL>:<port>] 
+```
+
+Here `-u apikey` and `-p <API_KEY>` use the IBM Cloud API key as an OpenShift password, exchanging it for an OAuth token. (If you downloaded the kubeconfig, it contains the master URL; otherwise get it via `ibmcloud oc cluster get`). Once logged in, any `oc` or `kubectl` commands can run as that user. For example, you can verify the context with `oc version` or list pods with `oc get pods --all-namespaces`.
+
+Any Kubernetes tool (including Helm) will use the same kubeconfig credentials. In practice, after the `oc login` above, you can run `helm` commands without additional auth flags. Alternatively, you can specify the kubeconfig path to Helm (via `--kubeconfig` or `$KUBECONFIG`), which now includes the logged-in context.
+
+## Using Service IDs and Service Accounts
+
+For CI/CD best practices, it’s recommended to use a dedicated identity with limited privileges. In IBM Cloud, you can create a **Service ID** and generate an API key for it. Assign the Service ID the minimum required IAM role on the cluster (for example a “Viewer” or “Editor” on the Kubernetes Service). Then use its key exactly like a user key:
+
+```bash
+ibmcloud login --apikey $SERVICE_ID_API_KEY ...
+ibmcloud oc cluster config --cluster $CLUSTER_NAME ...
+oc login -u apikey -p $SERVICE_ID_API_KEY
+```
+
+IBM’s docs show this flow explicitly for Service IDs. The advantage is that this key is isolated to CI/CD and can be revoked/rotated without affecting a person’s account.
+
+Another alternative is a native OpenShift **ServiceAccount** in the cluster. You can create a ServiceAccount, bind it to the needed RBAC role in the project/cluster, then log in using its token. For example:
+
+```bash
+oc create sa ci-bot -n myproject
+oc adm policy add-role-to-user edit system:serviceaccount:myproject:ci-bot -n myproject
+TOKEN=$(oc serviceaccounts get-token ci-bot -n myproject)
+oc login --token=$TOKEN --server=https://<master_URL>:<port>
+```
+
+This uses the SA’s token (fetched via `oc serviceaccounts get-token`) to authenticate. Red Hat docs also show that `oc login --token=<token>` logs in as `system:serviceaccount:…`. Using a cluster SA avoids going through IBM IAM, but keep the token secret. In both methods, restrict roles (for CI/CD often an “edit” or “view” role is enough rather than full admin).
+
+## CI/CD Pipeline Steps and Secure Handling
+
+In a CI/CD pipeline (Tekton, Jenkins, GitHub Actions, or IBM Cloud DevOps), you can script the above steps. For example, a typical pipeline job might do:
+
+```bash
+# Set env vars $IBMCLOUD_API_KEY, $REGION, $RESOURCE_GROUP, $CLUSTER_NAME securely in the pipeline settings
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" -g "${RESOURCE_GROUP}"
+ibmcloud oc cluster config --cluster "${CLUSTER_NAME}" --endpoint private
+oc login -u apikey -p "${IBMCLOUD_API_KEY}"
+oc project myproject   # switch to target namespace
+oc apply -f deploy.yaml
+# or: helm upgrade --install myapp ./chart --namespace myproject
+```
+
+This sequence (login→config→oc login) is documented by IBM for pipelines. For example, IBM’s docs advise running:
+
+```
+ibmcloud login --apikey "${IBMCLOUD_API_KEY}" -r "${REGION}" -g "${RESOURCE_GROUP}"
+ibmcloud oc cluster config --cluster "${CLUSTER_NAME}" --endpoint private
+kubectl config current-context
+oc version
+oc get pods -A 
+```
+
+to verify connectivity. In scripts you would then proceed with `oc apply` or `helm` commands to deploy your application manifests.
+
+**Secure storage:** Always keep the API key or tokens in a secret store. For example, use pipeline environment variables or credentials vaults rather than hard‑coding them. In IBM Cloud Continuous Delivery pipelines, store the API key as an environment variable (like `IBMCLOUD_API_KEY`). In GitHub Actions or Jenkins, use encrypted secrets/credentials. Do *not* echo or log the key. Likewise, if using a ServiceAccount token or kubeconfig file, store it in a secret or transient file and limit its visibility. IBM Cloud docs explicitly warn to “save your API key in a secure location” since it cannot be retrieved again. Follow the principle of least privilege: assign only the necessary IAM and Kubernetes roles to the key or service account. Regularly rotate credentials and audit the pipeline’s accesses.
+
+By following these steps – logging in with an IAM API key, configuring the kubeconfig, and using `oc login` non-interactively – your CI/CD pipeline can fully automate ROKS deployments without any manual token retrieval.
+
+**Sources:** IBM Cloud and Red Hat documentation on ROKS authentication and CI/CD (IBM Cloud docs on OpenShift access and service accounts, Red Hat OpenShift docs). These sources detail using IBM Cloud IAM API keys and service accounts to authenticate programmatically.
+
