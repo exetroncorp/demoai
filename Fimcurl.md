@@ -9,3 +9,7 @@ curl --location 'https://api.mistral.ai/v1/fim/completions' \
     "max_tokens": 64,
     "temperature": 0
 }'
+
+
+
+//a node js server that listens onf port 4444 and display a cat emoji in the browser
