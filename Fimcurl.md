@@ -12,4 +12,5 @@ curl --location 'https://api.mistral.ai/v1/fim/completions' \
 
 
 
-//a node js server that listens onf port 4444 and display a cat emoji in the browser
+//a node js server that listens onf port 4444 and display a cat in ascii art  in the browser
+
