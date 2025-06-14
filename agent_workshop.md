@@ -56,6 +56,86 @@ Insights Clés
 
 📚 Formation et compétences pour l’ère agentique : L’accent mis sur la combinaison des compétences – maîtrise technique des frameworks agents, solides fondations en mathématiques et algorithmie, expertise métier approfondie, et aptitudes en communication et influence – souligne que la réussite dans ce domaine réclame un équilibre entre rigueur scientifique et savoir-faire pratique.
 
-🌱 Perspective sociétale et futuriste : La vision finale place les agents IA au cœur d’une transformation profonde de la société et des économies, évoquant la protopia, un monde d’amélioration continue, où cette technologie contribuera à résoudre des défis globaux (énergie, santé, éducation, inclusion). Elle incite aussi à la préparation avec des politiques de reconversion et d’apprentissage continu face aux disruptions inévitables.
+🌱 Perspective sociétale et futuriste : La vision finale place les agents IA au cœur d’une transformation profonde de la société et des économies, évoquant la protopia, un monde d’amélioration continue, où cette technologie contribuera à réso
+udre des défis globaux (énergie, santé, éducation, inclusion). Elle incite aussi à la préparation avec des politiques de reconversion et d’apprentissage continu face aux disruptions inévitables.
+
+
+
+
+
+
+
+
+
 
 Ce résumé et ces analyses offrent une vue complète et approfondie de la conférence, des technologies exposées, des frameworks utilisés, ainsi que des perspectives tant techniques que stratégiques pour l’intégration des systèmes agentiques basés sur de grands modèles de langage modernes.
+
+
+
+# Agentic AI : conférence et atelier – résumé et plan d’ensemble
+## Introduction et définition des agents
+- 🤖 Les agents AI sont des programmes où les sorties des grands modèles de langage contrôlent le flux de travail.
+- 🛠️ Caractéristiques clés : appels multiples aux LLM, utilisation d’outils, interaction entre agents, planificateur et autonomie.
+## Opportunités et débats autour de l'agentic AI en 2025
+- 🚀 Andrew Ng voit un potentiel commercial inédit avec les workflows agentiques.
+- ⚖️ Certains experts comme Andre Burkoff jugent ces systèmes surévalués, mais la progression reste rapide.
+## Benchmarks et progrès des modèles LLM
+- 📊 Benchmark Humanity’s Last Exam (HLE) : test multimodal très difficile pour les LLM avec 2500 questions.
+- 🎯 Les agents améliorent les performances au-delà de 25% grâce à un raisonnement en chaîne et recherches en temps réel.
+## Raisons pour développer des agents AI aujourd’hui
+- 🔟 Dix raisons majeures : avancées en LLM, frameworks open source, infrastructures cloud, conteneurs, données massives, matériel bon marché, outils conviviaux, connectivité, environnements réglementaires et demande du marché.
+## Exemples d'applications agentiques
+- 💻 Génération de code, diagnostic médical multimodal, revue scientifique automatisée, support client automatisé.
+- ⚙️ Possibilité à moyen terme de firmes sans employés grâce aux agents autonomes.
+## Types de systèmes agentiques : workflows vs agents autonomes
+- 📋 Workflows : chemins de code prédéfinis, relativement contraints.
+- 🔄 Agents propres : contrôle dynamique et autonome sur leurs processus et usages d’outils, plus flexibles.
+## Outils et leur rôle
+- 🧰 Les outils permettent aux LLM d’exécuter des actions concrètes (requêtes bases de données, contrôle physique, communications).
+- ⚠️ LLM ne manipule pas directement les systèmes, il génère plutôt des instructions interprétées par le code.
+## Principaux frameworks d’agents AI
+- 🆓 Sans framework (accès brut aux API LLM).
+- 🔗 MCP (Model Context Protocol) d’Anthropic : protocole standard pour connecter agents avec outils et données.
+- ⚙️ OpenAI agents SDK : léger, simple, favori pour démarrer.
+- 👥 Crew AI : orienté multi-agents, configuration via YAML, plus prescriptif.
+- 💼 Langraph et Microsoft Autogen : plus complexes, non abordés ici.
+## Module 1 : Démonstration pratique avec OpenAI agents SDK
+- 💡 Exemple « Hello world » et création d’un agent blagueur.
+- 🔎 Projet Deep Research : construction de 4 agents spécialisés (planificateur, moteur de recherche, rédacteur, notification).
+- 📈 Utilisation d’outils hébergés (recherche web), outputs structurés avec Pyantic, traces d’exécution pour débogage.
+- 🎛️ Interface utilisateur simple avec Gradio.
+## Module 2 : Conception et codage d’une équipe d’ingénieurs avec Crew AI
+- 👩‍💻 Spécification agents via rôle, but, backstory, mémoire et tâches via fichiers YAML.
+- 🔄 Modes d’exécution séquentiels ou hiérarchiques avec gestion dynamique des tâches.
+- 👥 Construction d’une équipe avec lead, backend, frontend et testeur autonomes.
+- 🐳 Exécution sécurisée du code dans Docker.
+- 🎉 Résultat : application de gestion de comptes et interface développée intégralement par agents.
+## Patterns de workflows agentiques
+- 1️⃣ Prompt chaining : décomposer la tâche en sous-tâches linéaires.
+- 2️⃣ Routing : acheminer une tâche vers un agent spécialisé.
+- 3️⃣ Parallelization : exécuter en parallèle des sous-tâches, puis agréger les résultats.
+- 4️⃣ Orchestrator worker : orchestration dynamique par un agent.
+- 5️⃣ Evaluator optimizer : validateur LLM vérifiant le travail d’un autre agent en boucle.
+## Module 3 : Développement avancé avec MCP et agents autonomes traders
+- 🔌 MCP = protocole standard facilitant l’intégration rapide d’outils variés (ex. Google Maps, navigateur automatisé, systèmes de fichiers).
+- 🕸️ Architecture MCP : clients dans hosts communiquant avec serveurs MCP locaux ou distants.
+- 👷 Création facile de MCP serveurs et clients, possibilité de partager outils comme packages.
+- 🔍 Exemples MCP : fetch (navigation web), file system, memory graph, Brave search, Polygon (données de marché).
+- 💹 Projet final : agents traders autonomes multiples (Warren, George, Ray, Kathy) avec différents styles d’investissement.
+- 📈 Utilisation de 6 MCP serveurs, 44 outils, exécution dans environnement simulé de trading.
+- 🔔 Notifications push lors de décisions de trading.
+- 📊 Interface monitoring et traces pour suivi et analyse du comportement des agents.
+## Enjeux, perspectives et conseils pour les développeurs AI
+- 🔄 Agentic AI offre d’immenses opportunités créatives et commerciales malgré quelques risques (coûts, imprévisibilité).
+- 🎯 Recommandations : commencer petit, expérimenter, monitorer étroitement, exploiter ROI rapide pour convaincre.
+- 🎓 Importance d’une base solide (algèbre linéaire, statistiques, optimisation) et d’expertise métier.
+- 🤝 Compétences clés : orchestration multi-agents, collaboration Human-AI, communication au sein des organisations.
+- 🌍 Vision long terme : technologie accélérant progrès vers un futur « protéopique » de progrès continus avec impacts sociaux majeurs.
+## Ressources et contacts
+- 🖥️ Site johncone.com, newsletter, podcast Super Data Science, chaîne YouTube.
+- 📚 Cours Udemy Ed : approfondissement agents, MCP, Langraph, Autogen.
+- 💼 Consulting et partenariats en solutions AI agentiques pour entreprises.
+
+---
+
+Ce résumé structuré vous offre un aperçu complet du contenu détaillé présenté lors de l’atelier Agentic AI, abordant la théorie, la pratique, les frameworks, et les perspectives futures, avec un accent fort sur des cas d’usage concrets et des démos codées accessibles.
