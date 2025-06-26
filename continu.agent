@@ -17,3 +17,214 @@ yes
 add add bootswatch lumen theme
 
 ---------------------
+
+
+•
+Un LLM fonctionne comme un moteur de prédiction qui prend du texte séquentiel en entrée et prédit le jeton suivant basé sur ses données d'entraînement. Votre prompt vise à configurer le LLM pour prédire la bonne séquence de jetons.
+•
+C'est un processus itératif : les prompts inadéquats peuvent entraîner des réponses ambiguës ou inexactes.
+Configuration de la sortie du LLM
+En plus du prompt lui-même, vous devrez ajuster diverses configurations du LLM pour optimiser la sortie.
+•
+Longueur de la sortie (Output Length) : Détermine le nombre de jetons à générer. Réduire cette limite ne rend pas le LLM plus succinct, cela le fait simplement arrêter de générer des jetons une fois la limite atteinte.
+•
+Contrôles d'échantillonnage (Sampling Controls) : Les LLM prédisent des probabilités pour le jeton suivant. Les paramètres d'échantillonnage déterminent comment ces probabilités sont traitées pour choisir un jeton unique.
+◦
+Température (Temperature) : Contrôle le degré d'aléatoire dans la sélection des jetons.
+▪
+Températures plus basses (ex: 0) conviennent aux réponses déterministes et factuelles (la probabilité la plus élevée est toujours sélectionnée).
+▪
+Températures plus élevées mènent à des résultats plus diversifiés, créatifs ou inattendus.
+◦
+Top-K : Sélectionne les K jetons les plus probables de la distribution prédite du modèle. Plus le Top-K est élevé, plus la sortie est créative et variée ; plus il est bas, plus la sortie est restrictive et factuelle.
+◦
+Top-P (Nucleus Sampling) : Sélectionne les jetons dont la probabilité cumulative ne dépasse pas une certaine valeur (P). Les valeurs vont de 0 (décodage glouton) à 1 (tous les jetons possibles).
+Mise en pratique des configurations :
+•
+Si la température est à 0, Top-K et Top-P deviennent inutiles ; le jeton le plus probable est toujours choisi.
+•
+Si Top-K est à 1, température et Top-P deviennent inutiles ; un seul jeton passe le critère Top-K.
+•
+Si Top-P est à 0 (ou très petit), seule le jeton le plus probable est considéré, rendant température et Top-K inutiles.
+Points de départ recommandés :
+•
+Résultats cohérents mais créatifs : Température de .2, Top-P de .95, Top-K de 30.
+•
+Résultats très créatifs : Température de .9, Top-P de .99, Top-K de 40.
+•
+Résultats moins créatifs : Température de .1, Top-P de .9, Top-K de 20.
+•
+Réponse unique et correcte (ex: problème mathématique) : Température de 0.
+
+-----------------------
+
+
+ ReAct (reason & act)
+Un paradigme qui permet aux LLM de résoudre des tâches complexes en combinant le raisonnement en langage naturel avec des outils externes (recherche, interpréteur de code, APIs). Cela mime la façon dont les humains opèrent dans le monde réel.
+•
+Fonctionnement : Le LLM raisonne, génère un plan d'action, effectue les actions et observe les résultats. Il utilise ensuite les observations pour mettre à jour son raisonnement et générer un nouveau plan, jusqu'à une solution.
+
+------------------------
+
+Comprendre un Agent de Codage
+◦
+Un agent est un système qui accomplit des tâches de manière indépendante pour l'utilisateur.
+◦
+Les agents exploitent un LLM pour gérer l'exécution du flux de travail et prendre des décisions.
+◦
+Ils ont accès à divers outils (API externes, interpréteurs de code) pour interagir avec des systèmes externes, afin de recueillir du contexte et d'effectuer des actions.
+◦
+Les trois composants fondamentaux d'un agent sont le Modèle (le LLM), les Outils (fonctions/APIs), et les Instructions (directives claires pour le comportement de l'agent).
+2. Configuration et Premiers Pas (10 minutes)
+•
+Installation et Configuration (Conceptuel)
+◦
+Expliquez que l'atelier utilisera un environnement de développement intégré (IDE) tel que VSCode avec une extension d'agent de codage (comme continue.dev).
+◦
+Mentionnez brièvement l'importance de la configuration du modèle dans l'outil, notamment la température, qui contrôle le degré d'aléatoire dans la sélection des tokens. Pour les tâches de codage, qui nécessitent souvent des réponses déterministes, une température basse (proche de 0) est recommandée.
+◦
+Top-K et Top-P sont d'autres paramètres d'échantillonnage qui restreignent les tokens prédits aux plus probables, influençant le caractère créatif ou factuel de la sortie.
+
+---------------
+
+Meilleures Pratiques de Prompt Engineering pour le Codage (5 minutes)
+◦
+Fournir des exemples (Few-shot prompting) : Extrêmement efficace, agit comme un "outil d'enseignement puissant" pour le modèle.
+◦
+Concevoir avec simplicité : Les prompts doivent être concis, clairs et faciles à comprendre. Utilisez des verbes d'action comme "Écrire", "Expliquer", "Traduire", "Déboguer", "Réviser".
+◦
+Être spécifique sur la sortie : Définissez clairement le format, le style ou le contenu désiré.
+◦
+Utiliser des instructions plutôt que des contraintes : Dites au modèle ce qu'il doit faire plutôt que ce qu'il ne doit pas faire pour éviter la confusion et améliorer la précision.
+◦
+Contrôler la longueur de la sortie (max tokens) : Spécifiez la longueur désirée dans le prompt.
+◦
+Utiliser des variables dans les prompts : Permet de réutiliser les prompts et de les rendre plus dynamiques pour différentes entrées, particulièrement utile lors de l'intégration dans des applications.
+◦
+Documenter les tentatives de prompts : Gardez une trace détaillée de vos prompts et de leurs résultats pour apprendre et déboguer à l'avenir.
+
+-------------------
+
+Niveau 1 : Les bases (Simple, Génération de code directe)
+1.
+Exercice 1 : Génération de "Hello World"
+◦
+Objectif : Obtenir une première génération de code simple.
+◦
+Tâche : Demandez à l'agent de générer un script Python qui affiche "Hello, Agent World!" sur la console.
+◦
+Prompt suggéré : "Écris un script Python simple qui affiche 'Hello, Agent World!'."
+◦
+Concepts clés : Simplicité du prompt, capacité du LLM à produire du code de base.
+2.
+Exercice 2 : Génération de fonction spécifique
+◦
+Objectif : Spécifier des exigences de base pour une fonction.
+◦
+Tâche : Demandez à l'agent d'écrire une fonction JavaScript qui prend deux nombres en entrée et retourne leur somme.
+◦
+Prompt suggéré : "Crée une fonction JavaScript nommée addNumbers qui accepte deux arguments numériques et retourne leur somme."
+◦
+Concepts clés : Spécificité de la langue et de la signature de la fonction, importance de "être spécifique sur la sortie désirée" [précédente conversation, non présent dans les nouvelles sources].
+
+--------------------------------------------------------------------------------
+Niveau 2 : Interaction et Compréhension (Intermédiaire, Analyse de code)
+3.
+Exercice 3 : Explication de code
+◦
+Objectif : Utiliser l'agent pour comprendre un snippet de code existant.
+◦
+Tâche : Fournissez à l'agent un court extrait de code (par exemple, une boucle for en Python ou une fonction map en JavaScript) et demandez-lui de l'expliquer ligne par ligne.
+◦
+Prompt suggéré : "Explique en détail le rôle de chaque ligne de ce code Python :\n\npython\n# Votre code ici\n"
+◦
+Concepts clés : Capacité de l'agent à "raisonner" sur le code et à fournir du contexte.
+4.
+Exercice 4 : Traduction de langage
+◦
+Objectif : Évaluer la capacité de l'agent à traduire entre différentes syntaxes de programmation.
+◦
+Tâche : Demandez à l'agent de traduire le script Python généré à l'exercice 1 ou 2 en Java.
+◦
+Prompt suggéré : "Traduis le code Python suivant en Java :\n\npython\n# Votre code ici\n"
+◦
+Concepts clés : Polyvalence du LLM, nécessité de "vérifier le format de sortie" [précédente conversation, non présent dans les nouvelles sources].
+
+--------------------------------------------------------------------------------
+Niveau 3 : Correction et Amélioration (Avancé, Débogage et Refactoring)
+5.
+Exercice 5 : Débogage simple
+◦
+Objectif : Identifier et corriger des erreurs simples.
+◦
+Tâche : Présentez à l'agent un petit code avec une erreur typique (par exemple, une faute de frappe, une erreur logique simple, ou une utilisation incorrecte d'une méthode comme toUpperCase() au lieu de upper() en Python) et demandez-lui de la corriger et d'expliquer la correction.
+◦
+Prompt suggéré : "Le code Python ci-dessous génère une erreur. Trouve et corrige l'erreur, puis explique la correction :\n\npython\ntext = 'hello world'\nprint(text.toUpperCase())\n"
+◦
+Concepts clés : L'agent "reconnaît quand un workflow est complet et peut proactivement corriger ses actions si nécessaire".
+6.
+Exercice 6 : Refactoring et meilleures pratiques
+◦
+Objectif : Améliorer la qualité du code existant.
+◦
+Tâche : Fournissez un code fonctionnel mais qui pourrait être amélioré (par exemple, non-respect de conventions, code redondant, manque de commentaires) et demandez à l'agent de le refactoriser et de justifier ses choix.
+◦
+Prompt suggéré : "Ce code Python fonctionne, mais peut-il être amélioré pour être plus lisible et respecter les meilleures pratiques ? Refactorise-le et explique tes modifications :\n\npython\n# Votre code à refactoriser\n"
+◦
+Concepts clés : Capacité de l'agent à effectuer un "jugement nuancé" et à considérer des "modèles subtils" pour des "décisions complexes".
+7.
+Exercice 7 : Génération de tests unitaires
+◦
+Objectif : Utiliser l'agent pour assister dans la validation du code.
+◦
+Tâche : Donnez à l'agent une fonction ou une classe simple et demandez-lui d'écrire des tests unitaires (par exemple, en utilisant unittest pour Python ou Jest pour JavaScript) pour couvrir ses fonctionnalités principales.
+◦
+Prompt suggéré : "Génère des tests unitaires pour la fonction Python suivante, couvrant au moins trois scénarios différents :\n\npython\ndef divide(a, b):\n    return a / b\n"
+◦
+Concepts clés : L'agent a accès à des "outils" (ici implicitement un interpréteur ou une base de connaissances pour la génération de tests).
+
+--------------------------------------------------------------------------------
+Niveau 4 : Tâches complexes et scénarios avancés (Complexité croissante)
+8.
+Exercice 8 : Implémentation d'une petite fonctionnalité avec contraintes
+◦
+Objectif : Guider l'agent à travers une tâche multi-étapes avec des contraintes spécifiques.
+◦
+Tâche : Demandez à l'agent d'implémenter une petite fonctionnalité (ex: un script qui lit un fichier CSV, filtre des lignes et écrit un nouveau CSV) en spécifiant des contraintes (ex: "utilise la librairie pandas", "ne dépasse pas 50 lignes de code", "gère les erreurs de lecture de fichier").
+◦
+Prompt suggéré : "Écris un script Python qui lit un fichier CSV nommé 'data.csv', filtre toutes les lignes où la colonne 'statut' est 'Inactif', et sauvegarde les résultats dans 'filtered_data.csv'. Assure-toi d'utiliser la librairie pandas et d'inclure une gestion basique des erreurs de fichier."
+◦
+Concepts clés : Gérer des "tâches complexes, multi-étapes", "être spécifique sur la sortie désirée" et "contrôler la longueur de la sortie" [précédente conversation, non présent dans les nouvelles sources].
+9.
+Exercice 9 : Analyse de sécurité ou de conformité (conceptuel)
+◦
+Objectif : Commencer à explorer comment les agents peuvent aider avec les "guardrails".
+◦
+Tâche : Fournissez un snippet de code qui pourrait potentiellement exposer des informations sensibles (par exemple, des logs non filtrés d'informations d'identification) ou ne pas suivre une bonne pratique de sécurité. Demandez à l'agent d'analyser le code sous l'angle de la sécurité ou de la conformité PII, et de suggérer des améliorations.
+◦
+Prompt suggéré : "Analyse le code Python suivant pour toute exposition potentielle d'informations personnelles identifiables (PII) ou d'autres vulnérabilités de sécurité. Suggère des modifications pour améliorer sa robustesse :\n\npython\n# Votre code potentiellement risqué\n"
+◦
+Concepts clés : Lien avec les "guardrails" qui gèrent les risques de confidentialité des données ou de réputation, notamment le "PII filter" et les "tool safeguards". L'agent ici utilise son "raisonnement" pour simuler une partie de ces gardes-fous.
+10.
+Exercice 10 : Développement itératif de fonctionnalité (Scénario d'agent)
+◦
+Objectif : Simuler un dialogue plus long et itératif pour développer une fonctionnalité.
+◦
+Tâche : Commencez par une demande générale (ex: "Crée une petite application web simple pour gérer une liste de tâches"). L'agent fera des suggestions ou posera des questions. Répondez pour affiner la fonctionnalité étape par étape (ex: "Ajoute une option pour marquer les tâches comme terminées", "Utilise un fichier JSON pour la persistance", "Ajoute une interface en ligne de commande"). Chaque interaction devrait construire sur la précédente.
+◦
+Prompts suggérés (dialogue) :
+▪
+Vous : "Je veux créer une petite application de liste de tâches simple en Python."
+▪
+(Agent propose un code de base)
+▪
+Vous : "C'est bien. Maintenant, comment puis-je ajouter la possibilité de marquer une tâche comme terminée ?"
+▪
+(Agent modifie le code)
+▪
+Vous : "Excellent. Peux-tu aussi ajouter une façon de sauvegarder et charger les tâches à partir d'un fichier JSON ?"
+▪
+(Agent adapte le code pour la persistance)
+◦
+Concepts clés : Gestion de "tâches complexes, multi-étapes", l'agent "gère l'exécution du flux de travail et prend des décisions". Cela illustre un "workflow" qui est une séquence d'étapes exécutées pour atteindre un objectif utilisateur. C'est un exemple de "Single-agent system" où un seul modèle exécute le workflow en boucle.
+
