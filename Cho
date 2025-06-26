@@ -1,0 +1,5 @@
+configurable-http-proxy \
+  --port 8000 \
+  --api-port 8001 \
+  --custom-header "Content-Security-Policy" "default-src * 'unsafe-inline' 'unsafe-eval'; img-src * data:; font-src * data:; connect-src * ws: wss:;" \
+  --proxy-timeout 300
