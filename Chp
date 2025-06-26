@@ -1,0 +1,5 @@
+c.ConfigurableHTTPProxy.command = [
+    'configurable-http-proxy',
+    '--custom-header', 'Content-Security-Policy',
+    "default-src * 'unsafe-inline' 'unsafe-eval'; style-src * 'unsafe-inline'; img-src * data:; font-src * data:; connect-src * ws: wss:;"
+]
