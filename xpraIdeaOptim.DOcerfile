@@ -1,0 +1,149 @@
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=Etc/UTC \
+    XPRA_HTML_PORT=10000 \
+    DISPLAY=:100 \
+    USER_NAME=dev \
+    USER_UID=1000 \
+    USER_GID=1000 \
+    IDEA_EDITION=IC \
+    IDEA_VERSION=2024.2.3 \
+    XDG_RUNTIME_DIR=/run/user/1000
+
+# Install base packages, desktop, xpra server, and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget gnupg unzip xz-utils procps \
+    xpra xserver-xorg-video-dummy xauth \
+    openbox pcmanfm lxpanel lxterminal menu \
+    fonts-dejavu fonts-liberation ttf-bitstream-vera \
+    openjdk-17-jre-headless \
+    sudo git openssh-client nano \
+    dbus-x11 \
+    python3-paramiko python3-uinput python3-avahi python3-dbus \
+    python3-pyinotify python3-xdg python3-lz4 python3-pil \
+    libgl1-mesa-dri libglu1-mesa \
+    libasound2 libasound2-plugins \
+    libjs-jquery \
+ && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Fetch HTML5 client from Xpra upstream and fix jQuery path
+RUN mkdir -p /usr/share/xpra/www && \
+    wget -qO- https://github.com/Xpra-org/xpra-html5/archive/refs/heads/master.tar.gz \
+    | tar xz --strip-components=1 -C /usr/share/xpra/www && \
+    mkdir -p /usr/share/xpra/www/js/lib && \
+    ln -sf /usr/share/javascript/jquery/jquery.min.js /usr/share/xpra/www/js/lib/jquery.js
+
+# Create non-root user and runtime dirs
+RUN groupadd -g ${USER_GID} ${USER_NAME} && \
+    useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash ${USER_NAME} && \
+    echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${USER_NAME} && \
+    mkdir -p /run/user/${USER_UID}/xpra /run/xpra /tmp/.X11-unix && \
+    chown -R ${USER_NAME}:${USER_NAME} /run/user/${USER_UID} /run/xpra && \
+    chmod 755 /run/user/${USER_UID} && \
+    chmod 1777 /tmp/.X11-unix && \
+    mkdir -p /home/${USER_NAME}/Templates
+
+USER ${USER_NAME}
+WORKDIR /home/${USER_NAME}
+
+# Download and install IntelliJ IDEA
+RUN set -eux; \
+    IDEA_TARBALL="idea${IDEA_EDITION}-${IDEA_VERSION}.tar.gz"; \
+    IDEA_URL="https://download.jetbrains.com/idea/${IDEA_TARBALL}"; \
+    mkdir -p apps && cd apps; \
+    wget -q "${IDEA_URL}" -O "${IDEA_TARBALL}"; \
+    tar -xzf "${IDEA_TARBALL}"; \
+    rm -f "${IDEA_TARBALL}"; \
+    ln -s $(ls -d idea-*) idea
+
+# IntelliJ JVM tuning for CPU-only
+RUN mkdir -p /home/${USER_NAME}/.config/JetBrains/IntelliJIdea2024.2 && \
+    cat > /home/${USER_NAME}/.config/JetBrains/IntelliJIdea2024.2/idea.vmoptions <<'EOF'
+-Xms1024m
+-Xmx2048m
+-XX:ReservedCodeCacheSize=512m
+-XX:+UseG1GC
+-XX:+UseStringDeduplication
+-Dsun.java2d.opengl=false
+-Dsun.java2d.xrender=true
+-Dawt.useSystemAAFontSettings=lcd
+-Djava.net.preferIPv4Stack=true
+-Djdk.gtk.version=2
+EOF
+
+# Openbox menu
+RUN mkdir -p .config/openbox && \
+    cat > .config/openbox/menu.xml <<'EOF'
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_menu xmlns="http://openbox.org/3.4/menu">
+  <menu id="root-menu" label="Applications">
+    <item label="File Manager">
+      <action name="Execute"><command>pcmanfm</command></action>
+    </item>
+    <item label="IntelliJ IDEA">
+      <action name="Execute"><command>/home/dev/apps/idea/bin/idea.sh</command></action>
+    </item>
+    <item label="Terminal">
+      <action name="Execute"><command>lxterminal</command></action>
+    </item>
+  </menu>
+</openbox_menu>
+EOF
+
+# PCManFM config
+RUN mkdir -p .config/pcmanfm/default && \
+    { \
+      echo '[config]'; \
+      echo 'bm_open_method=0'; \
+      echo ''; \
+      echo '[volume]'; \
+      echo 'mount_on_startup=1'; \
+      echo 'mount_removable=1'; \
+    } > .config/pcmanfm/default/pcmanfm.conf
+
+# Xpra startup script tuned for CPU-only
+RUN echo '#!/usr/bin/env bash' > start.sh && \
+    echo 'set -exo pipefail' >> start.sh && \
+    echo 'mkdir -p "$XDG_RUNTIME_DIR/xpra"' >> start.sh && \
+    echo 'if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then' >> start.sh && \
+    echo '  eval $(dbus-launch --sh-syntax)' >> start.sh && \
+    echo 'fi' >> start.sh && \
+    echo 'exec xpra start-desktop :100 \' >> start.sh && \
+    echo '  --start-child="openbox-session" \' >> start.sh && \
+    echo '  --bind-tcp=0.0.0.0:$XPRA_HTML_PORT \' >> start.sh && \
+    echo '  --html=on \' >> start.sh && \
+    echo '  --tcp-auth=none \' >> start.sh && \
+    echo '  --exit-with-children=yes \' >> start.sh && \
+    echo '  --video-encoder=x264 \' >> start.sh && \
+    echo '  --encoding=jpeg \' >> start.sh && \
+    echo '  --quality=70 --min-quality=50 \' >> start.sh && \
+    echo '  --speed=90 --min-speed=50 \' >> start.sh && \
+    echo '  --opengl=no \' >> start.sh && \
+    echo '  --speaker=off --microphone=off --webcam=no --printing=no \' >> start.sh && \
+    echo '  --mdns=no \' >> start.sh && \
+    echo '  --notifications=no \' >> start.sh && \
+    echo '  --window-close=disconnect \' >> start.sh && \
+    echo '  --daemon=no' >> start.sh && \
+    chmod +x start.sh
+
+# IntelliJ launch script
+RUN echo '#!/usr/bin/env bash' > launch-idea.sh && \
+    echo 'sleep 15' >> launch-idea.sh && \
+    echo 'DISPLAY=:100 "$HOME/apps/idea/bin/idea.sh" nosplash &' >> launch-idea.sh && \
+    chmod +x launch-idea.sh
+
+# Openbox autostart
+RUN mkdir -p .config/openbox && \
+    cat > .config/openbox/autostart <<'EOF'
+#!/bin/bash
+(sleep 2  && pcmanfm --desktop) &
+(sleep 3  && lxpanel) &
+(sleep 15 && "$HOME/launch-idea.sh") &
+EOF
+RUN chmod +x .config/openbox/autostart
+
+EXPOSE 10000/tcp
+
+ENTRYPOINT ["./start.sh"]
