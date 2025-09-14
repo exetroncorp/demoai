@@ -1,0 +1,81 @@
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zosconnect-workspace
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: hostpath
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: zosconnect-project
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: hostpath
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: zosconnect-designer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: zosconnect-designer
+  template:
+    metadata:
+      labels:
+        app: zosconnect-designer
+    spec:
+      securityContext:
+        runAsUser: 1001
+        runAsGroup: 1001
+        fsGroup: 1001
+      containers:
+      - name: designer
+        image: icr.io/zosconnect/ibm-zcon-designer:3.0.96
+        securityContext:
+          readOnlyRootFilesystem: true
+        ports:
+        - containerPort: 9080
+        - containerPort: 9443
+        volumeMounts:
+          - mountPath: /tmp
+            name: tmp
+          - mountPath: /logs
+            name: logs
+          - mountPath: /opt/ibm/wlp/usr/servers/defaultServer/logs
+            name: logs
+          - mountPath: /opt/ibm/wlp/usr/servers/defaultServer/workarea
+            name: workarea
+          - mountPath: /opt/ibm/wlp/output
+            name: output
+          - mountPath: /home/default
+            name: workspace
+          - mountPath: /workspace/project
+            name: project
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: logs
+          emptyDir: {}
+        - name: workarea
+          emptyDir: {}
+        - name: output
+          emptyDir: {}
+        - name: workspace
+          persistentVolumeClaim:
+            claimName: zosconnect-workspace
+        - name: project
+          persistentVolumeClaim:
+            claimName: zosconnect-project
