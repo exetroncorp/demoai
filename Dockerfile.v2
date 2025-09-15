@@ -1,0 +1,264 @@
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=Etc/UTC \
+    XPRA_HTML_PORT=10000 \
+    DISPLAY=:100 \
+    USER_NAME=dev \
+    USER_UID=1000 \
+    USER_GID=1000 \
+    IDEA_EDITION=IC \
+    IDEA_VERSION=2024.3 \
+    XDG_RUNTIME_DIR=/run/user/1000
+
+# Installation minimale des paquets necessaires
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget gnupg unzip xz-utils procps \
+    xpra xserver-xorg-video-dummy xauth \
+    openbox \
+    pcmanfm \
+    lxterminal \
+    fonts-dejavu \
+    openjdk-17-jre-headless \
+    sudo git openssh-client nano \
+    dbus-x11 \
+    python3-paramiko python3-dbus python3-xdg python3-lz4 \
+    python3-pil python3-pyinotify python3-uinput python3-netifaces \
+    feh nitrogen \
+    libgl1-mesa-dri \
+    libjs-jquery \
+ && apt-get clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+# Telechargement du client HTML5 Xpra
+RUN mkdir -p /usr/share/xpra/www && \
+    wget -qO- https://github.com/Xpra-org/xpra-html5/archive/refs/heads/master.tar.gz \
+    | tar xz --strip-components=1 -C /usr/share/xpra/www && \
+    mkdir -p /usr/share/xpra/www/js/lib && \
+    ln -sf /usr/share/javascript/jquery/jquery.min.js /usr/share/xpra/www/js/lib/jquery.js && \
+    find /usr/share/xpra/www -name "*.md" -delete && \
+    find /usr/share/xpra/www -name "*.txt" -delete
+
+# Creation utilisateur non-root et repertoires
+RUN groupadd -g ${USER_GID} ${USER_NAME} && \
+    useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash ${USER_NAME} && \
+    echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${USER_NAME} && \
+    mkdir -p /run/user/${USER_UID}/xpra /run/xpra /tmp/.X11-unix && \
+    chown -R ${USER_NAME}:${USER_NAME} /run/user/${USER_UID} /run/xpra && \
+    chmod 755 /run/user/${USER_UID} && \
+    chmod 1777 /tmp/.X11-unix && \
+    mkdir -p /home/${USER_NAME}/Templates /home/${USER_NAME}/Desktop
+
+USER ${USER_NAME}
+WORKDIR /home/${USER_NAME}
+
+# Telecharger l'arriere-plan Streets of Rage 4
+RUN wget -q "https://w0.peakpx.com/wallpaper/304/561/HD-wallpaper-streets-of-rage-4-bare-knuckle-streets-of-rage-4-2020-games-games.jpg" \
+    -O /home/${USER_NAME}/wallpaper.jpg
+
+# Telecharger et installer IntelliJ IDEA derniere version
+RUN set -eux; \
+    IDEA_TARBALL="idea${IDEA_EDITION}-${IDEA_VERSION}.tar.gz"; \
+    IDEA_URL="https://download.jetbrains.com/idea/${IDEA_TARBALL}"; \
+    mkdir -p apps && cd apps; \
+    wget -q "${IDEA_URL}" -O "${IDEA_TARBALL}"; \
+    tar -xzf "${IDEA_TARBALL}"; \
+    rm -f "${IDEA_TARBALL}"; \
+    ln -s $(ls -d idea-*) idea
+
+# Configuration IntelliJ IDEA pour optimiser les performances
+RUN mkdir -p .config/JetBrains/IntelliJIdea2024.3 && \
+    echo '# Optimisation pour 8GB RAM et 4 CPU' > .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Xms512m' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Xmx4096m' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:ReservedCodeCacheSize=512m' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:InitialCodeCacheSize=64m' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:+UseConcMarkSweepGC' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:SoftRefLRUPolicyMSPerMB=50' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-ea' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:CICompilerCount=2' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Dsun.io.useCanonPrefixCache=false' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Djdk.http.auth.tunneling.disabledSchemes=""' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:+HeapDumpOnOutOfMemoryError' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:-OmitStackTraceInFastThrow' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Djdk.attach.allowAttachSelf=true' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Dkotlinx.coroutines.debug=off' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:ErrorFile=$USER_HOME/java_error_in_idea_%p.log' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-XX:HeapDumpPath=$USER_HOME/java_error_in_idea.hprof' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Didea.max.intellisense.filesize=2500' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Didea.cycle.buffer.size=disabled' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Didea.is.internal=false' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Didea.jre.check=false' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Djava.net.useSystemProxies=false' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions && \
+    echo '-Dsun.io.useCanonCaches=false' >> .config/JetBrains/IntelliJIdea2024.3/idea64.vmoptions
+
+# Configuration IDE.properties pour optimiser davantage
+RUN echo 'idea.config.path=~/.config/JetBrains/IntelliJIdea2024.3' > .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'idea.system.path=~/.cache/JetBrains/IntelliJIdea2024.3' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'idea.log.path=~/.cache/JetBrains/IntelliJIdea2024.3/log' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'idea.max.intellisense.filesize=2500' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'idea.cycle.buffer.size=disabled' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'ide.mac.file.chooser.native=false' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'apple.laf.useScreenMenuBar=false' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'idea.ProcessCanceledException=disabled' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'idea.fatal.error.notification=disabled' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'idea.max.content.load.filesize=20000' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties && \
+    echo 'swing.bufferPerWindow=true' >> .config/JetBrains/IntelliJIdea2024.3/idea.properties
+
+# Creer les icones sur le bureau (en tant que root d'abord)
+USER root
+RUN mkdir -p /home/dev/Desktop && \
+    chown -R dev:dev /home/dev/Desktop
+
+# Repasser en utilisateur dev pour creer les fichiers
+USER ${USER_NAME}
+RUN echo '[Desktop Entry]' > /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Version=1.0' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Type=Application' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Name=IntelliJ IDEA' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Comment=IDE Java' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Exec=/home/dev/apps/idea/bin/idea.sh' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Icon=/home/dev/apps/idea/bin/idea.svg' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Path=/home/dev' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Terminal=false' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'StartupWMClass=jetbrains-idea' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    echo 'Categories=Development;IDE;' >> /home/dev/Desktop/IntelliJ-IDEA.desktop && \
+    chmod +x /home/dev/Desktop/IntelliJ-IDEA.desktop
+
+# Icone Terminal
+RUN echo '[Desktop Entry]' > /home/dev/Desktop/Terminal.desktop && \
+    echo 'Version=1.0' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Type=Application' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Name=Terminal' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Comment=Terminal LXTerminal' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Exec=lxterminal' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Icon=utilities-terminal' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Path=/home/dev' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Terminal=false' >> /home/dev/Desktop/Terminal.desktop && \
+    echo 'Categories=System;TerminalEmulator;' >> /home/dev/Desktop/Terminal.desktop && \
+    chmod +x /home/dev/Desktop/Terminal.desktop
+
+# Icone Gestionnaire de fichiers
+RUN echo '[Desktop Entry]' > /home/dev/Desktop/Files.desktop && \
+    echo 'Version=1.0' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Type=Application' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Name=File Manager' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Comment=Gestionnaire de fichiers PCManFM' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Exec=pcmanfm' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Icon=system-file-manager' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Path=/home/dev' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Terminal=false' >> /home/dev/Desktop/Files.desktop && \
+    echo 'Categories=System;FileTools;FileManager;' >> /home/dev/Desktop/Files.desktop && \
+    chmod +x /home/dev/Desktop/Files.desktop
+
+# Configuration Openbox minimaliste
+RUN mkdir -p .config/openbox && \
+    echo '<?xml version="1.0" encoding="UTF-8"?>' > .config/openbox/menu.xml && \
+    echo '<openbox_menu xmlns="http://openbox.org/3.4/menu">' >> .config/openbox/menu.xml && \
+    echo '  <menu id="root-menu" label="Applications">' >> .config/openbox/menu.xml && \
+    echo '    <item label="File Manager">' >> .config/openbox/menu.xml && \
+    echo '      <action name="Execute"><command>pcmanfm</command></action>' >> .config/openbox/menu.xml && \
+    echo '    </item>' >> .config/openbox/menu.xml && \
+    echo '    <item label="IntelliJ IDEA">' >> .config/openbox/menu.xml && \
+    echo '      <action name="Execute"><command>/home/dev/apps/idea/bin/idea.sh</command></action>' >> .config/openbox/menu.xml && \
+    echo '    </item>' >> .config/openbox/menu.xml && \
+    echo '    <item label="Terminal">' >> .config/openbox/menu.xml && \
+    echo '      <action name="Execute"><command>lxterminal</command></action>' >> .config/openbox/menu.xml && \
+    echo '    </item>' >> .config/openbox/menu.xml && \
+    echo '  </menu>' >> .config/openbox/menu.xml && \
+    echo '</openbox_menu>' >> .config/openbox/menu.xml
+
+# Configuration Openbox pour performance optimisee
+RUN echo '<?xml version="1.0" encoding="UTF-8"?>' > .config/openbox/rc.xml && \
+    echo '<openbox_config xmlns="http://openbox.org/3.4/rc">' >> .config/openbox/rc.xml && \
+    echo '  <resistance>' >> .config/openbox/rc.xml && \
+    echo '    <strength>10</strength>' >> .config/openbox/rc.xml && \
+    echo '    <screen_edge_strength>20</screen_edge_strength>' >> .config/openbox/rc.xml && \
+    echo '  </resistance>' >> .config/openbox/rc.xml && \
+    echo '  <focus>' >> .config/openbox/rc.xml && \
+    echo '    <followMouse>no</followMouse>' >> .config/openbox/rc.xml && \
+    echo '    <focusLast>yes</focusLast>' >> .config/openbox/rc.xml && \
+    echo '    <underMouse>no</underMouse>' >> .config/openbox/rc.xml && \
+    echo '    <focusDelay>0</focusDelay>' >> .config/openbox/rc.xml && \
+    echo '    <raiseOnFocus>no</raiseOnFocus>' >> .config/openbox/rc.xml && \
+    echo '  </focus>' >> .config/openbox/rc.xml && \
+    echo '  <placement>' >> .config/openbox/rc.xml && \
+    echo '    <policy>Smart</policy>' >> .config/openbox/rc.xml && \
+    echo '    <center>yes</center>' >> .config/openbox/rc.xml && \
+    echo '  </placement>' >> .config/openbox/rc.xml && \
+    echo '  <theme>' >> .config/openbox/rc.xml && \
+    echo '    <name>Clearlooks</name>' >> .config/openbox/rc.xml && \
+    echo '    <titleLayout>NLIMC</titleLayout>' >> .config/openbox/rc.xml && \
+    echo '    <keepBorder>yes</keepBorder>' >> .config/openbox/rc.xml && \
+    echo '    <animateIconify>no</animateIconify>' >> .config/openbox/rc.xml && \
+    echo '  </theme>' >> .config/openbox/rc.xml && \
+    echo '  <desktops>' >> .config/openbox/rc.xml && \
+    echo '    <number>1</number>' >> .config/openbox/rc.xml && \
+    echo '    <firstdesk>1</firstdesk>' >> .config/openbox/rc.xml && \
+    echo '    <names>' >> .config/openbox/rc.xml && \
+    echo '      <name>Desktop</name>' >> .config/openbox/rc.xml && \
+    echo '    </names>' >> .config/openbox/rc.xml && \
+    echo '    <popupTime>0</popupTime>' >> .config/openbox/rc.xml && \
+    echo '  </desktops>' >> .config/openbox/rc.xml && \
+    echo '  <resize>' >> .config/openbox/rc.xml && \
+    echo '    <drawContents>no</drawContents>' >> .config/openbox/rc.xml && \
+    echo '    <popupShow>Nonpixel</popupShow>' >> .config/openbox/rc.xml && \
+    echo '    <popupPosition>Center</popupPosition>' >> .config/openbox/rc.xml && \
+    echo '  </resize>' >> .config/openbox/rc.xml && \
+    echo '</openbox_config>' >> .config/openbox/rc.xml
+
+# Configuration PCManFM
+RUN mkdir -p .config/pcmanfm/default && \
+    echo '[config]' > .config/pcmanfm/default/pcmanfm.conf && \
+    echo 'bm_open_method=0' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo 'view_mode=icon_view' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo 'show_hidden=0' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo 'sort=name' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo 'sort_type=ascending' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo '' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo '[volume]' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo 'mount_on_startup=0' >> .config/pcmanfm/default/pcmanfm.conf && \
+    echo 'mount_removable=0' >> .config/pcmanfm/default/pcmanfm.conf
+
+# Script de demarrage Xpra optimise
+RUN echo '#!/usr/bin/env bash' > start.sh && \
+    echo 'set -exo pipefail' >> start.sh && \
+    echo 'mkdir -p "$XDG_RUNTIME_DIR/xpra"' >> start.sh && \
+    echo 'if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then' >> start.sh && \
+    echo '  eval $(dbus-launch --sh-syntax)' >> start.sh && \
+    echo 'fi' >> start.sh && \
+    echo 'exec xpra start-desktop :100 \' >> start.sh && \
+    echo '  --start-child="openbox-session" \' >> start.sh && \
+    echo '  --bind-tcp=0.0.0.0:$XPRA_HTML_PORT \' >> start.sh && \
+    echo '  --html=on \' >> start.sh && \
+    echo '  --tcp-auth=none \' >> start.sh && \
+    echo '  --exit-with-children=yes \' >> start.sh && \
+    echo '  --video-encoder=x264 \' >> start.sh && \
+    echo '  --encoding=rgb \' >> start.sh && \
+    echo '  --quality=60 --min-quality=30 \' >> start.sh && \
+    echo '  --speed=90 --min-speed=50 \' >> start.sh && \
+    echo '  --opengl=no \' >> start.sh && \
+    echo '  --speaker=off --microphone=off --webcam=no --printing=no \' >> start.sh && \
+    echo '  --mdns=no \' >> start.sh && \
+    echo '  --notifications=no \' >> start.sh && \
+    echo '  --window-close=disconnect \' >> start.sh && \
+    echo '  --daemon=no' >> start.sh && \
+    chmod +x start.sh
+
+# Script de lancement IntelliJ optimise
+RUN echo '#!/usr/bin/env bash' > launch-idea.sh && \
+    echo 'sleep 15' >> launch-idea.sh && \
+    echo 'DISPLAY=:100 "$HOME/apps/idea/bin/idea.sh" nosplash &' >> launch-idea.sh && \
+    chmod +x launch-idea.sh
+
+# Autostart Openbox avec fond d'ecran
+RUN mkdir -p .config/openbox && \
+    echo '#!/bin/bash' > .config/openbox/autostart && \
+    echo '(feh --bg-scale ~/wallpaper.jpg) &' >> .config/openbox/autostart && \
+    echo '(sleep 2 && pcmanfm --desktop --profile LXDE) &' >> .config/openbox/autostart && \
+    echo '(sleep 15 && "$HOME/launch-idea.sh") &' >> .config/openbox/autostart && \
+    chmod +x .config/openbox/autostart
+
+EXPOSE 10000/tcp
+
+ENTRYPOINT ["./start.sh"]
