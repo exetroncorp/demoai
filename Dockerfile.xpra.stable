@@ -1,0 +1,112 @@
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8 \
+    TZ=Etc/UTC \
+    XPRA_HTML_PORT=10000 \
+    DISPLAY=:100 \
+    USER_NAME=dev \
+    USER_UID=1000 \
+    USER_GID=1000 \
+    XDG_RUNTIME_DIR=/tmp/1000 \
+    JAVA_HOME=/opt/java \
+    IDEA_HOME=/opt/idea
+
+# Install base system tools and desktop environment
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates curl wget gnupg xz-utils sudo dbus-x11  \
+   xserver-xorg-core xserver-xorg-video-dummy xserver-xorg-input-mouse xserver-xorg-input-kbd \
+    xauth xvfb \
+    openbox pcmanfm lxterminal chromium firefox-esr \
+    fonts-dejavu fonts-liberation fonts-noto feh \
+    libgl1-mesa-dri libjs-jquery \
+    htop neofetch git vim nano \
+    openjdk-17-jdk \
+    python3-psutil python3-pip python3-pil \
+    && rm -rf /var/lib/apt/lists/*
+	
+
+# Add Xpra APT source
+RUN curl -fsSL https://xpra.org/xpra.asc | tee /usr/share/keyrings/xpra.asc > /dev/null && \
+    echo "Types: deb" > /etc/apt/sources.list.d/xpra.sources && \
+    echo "URIs: https://xpra.org" >> /etc/apt/sources.list.d/xpra.sources && \
+    echo "Suites: bookworm" >> /etc/apt/sources.list.d/xpra.sources && \
+    echo "Components: main" >> /etc/apt/sources.list.d/xpra.sources && \
+    echo "Signed-By: /usr/share/keyrings/xpra.asc" >> /etc/apt/sources.list.d/xpra.sources && \
+    echo "Architectures: amd64 arm64" >> /etc/apt/sources.list.d/xpra.sources && \
+    apt-get update && \
+    apt-get install -y xpra  xpra-codecs && \
+    rm -rf /var/lib/apt/lists/*
+	
+# Fetch HTML5 client from Xpra upstream
+RUN mkdir -p /usr/share/xpra/www && \
+    wget -qO- https://github.com/Xpra-org/xpra-html5/archive/refs/heads/master.tar.gz \
+    | tar xz --strip-components=1 -C /usr/share/xpra/www && \
+    mkdir -p /usr/share/xpra/www/js/lib && \
+    ln -sf /usr/share/javascript/jquery/jquery.min.js /usr/share/xpra/www/js/lib/jquery.js
+
+# Create non-root user
+RUN groupadd -g ${USER_GID} ${USER_NAME} && \
+    useradd -m -u ${USER_UID} -g ${USER_GID} -s /bin/bash ${USER_NAME} && \
+    echo "${USER_NAME} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/90-${USER_NAME} && \
+    mkdir -p /run/user/${USER_UID}/xpra /run/xpra /tmp/.X11-unix && \
+    chown -R ${USER_NAME}:${USER_NAME} /run/user/${USER_UID} /run/xpra && \
+    chmod 755 /run/user/${USER_UID} && \
+    chmod 1777 /tmp/.X11-unix
+
+# Download and install IntelliJ IDEA
+RUN wget -q "https://download.jetbrains.com/idea/ideaIC-2024.2.4.tar.gz" -O /tmp/idea.tar.gz && \
+    mkdir -p ${IDEA_HOME} && \
+    tar -xzf /tmp/idea.tar.gz -C ${IDEA_HOME} --strip-components=1 && \
+    rm /tmp/idea.tar.gz && \
+    chown -R ${USER_NAME}:${USER_NAME} ${IDEA_HOME}
+
+USER ${USER_NAME}
+WORKDIR /home/${USER_NAME}
+
+# Install Pillow (PIL) for the user (fixes the PIL import error)
+RUN pip3 install --user Pillow --break-system-packages
+
+# Wallpaper
+RUN wget -q "https://w0.peakpx.com/wallpaper/304/561/HD-wallpaper-streets-of-rage-4-bare-knuckle-streets-of-rage-4-2020-games-games.jpg" \
+    -O /home/${USER_NAME}/wallpaper.jpg
+
+# Desktop icons
+RUN mkdir -p .local/share/applications Desktop && \
+    echo '[Desktop Entry]\nVersion=1.0\nType=Application\nName=IntelliJ IDEA Community\nIcon=/opt/idea/bin/idea.png\nExec=/opt/idea/bin/idea.sh\nComment=IDE\nCategories=Development;IDE;\nTerminal=false\nStartupWMClass=jetbrains-idea\nStartupNotify=true' > .local/share/applications/intellij-idea.desktop && \
+    cp .local/share/applications/intellij-idea.desktop Desktop/ && \
+    echo '[Desktop Entry]\nVersion=1.0\nName=Chromium\nExec=chromium --no-sandbox --disable-dev-shm-usage\nIcon=chromium\nType=Application\nCategories=Network;WebBrowser;' > Desktop/chrome.desktop && \
+    chmod +x Desktop/chrome.desktop && \
+    echo '[Desktop Entry]\nVersion=1.0\nName=Terminal\nExec=lxterminal\nIcon=utilities-terminal\nType=Application\nCategories=System;TerminalEmulator;' > Desktop/terminal.desktop && \
+    chmod +x Desktop/terminal.desktop && \
+    echo '[Desktop Entry]\nVersion=1.0\nName=File Manager\nExec=pcmanfm\nIcon=folder\nType=Application\nCategories=System;FileManager;' > Desktop/filemanager.desktop && \
+    chmod +x Desktop/filemanager.desktop
+
+# Openbox autostart
+RUN mkdir -p .config/openbox && \
+    echo '#!/bin/bash\n(feh --bg-scale ~/wallpaper.jpg) &\n(sleep 2 && pcmanfm --desktop --profile LXDE) &' > .config/openbox/autostart && \
+    chmod +x .config/openbox/autostart
+
+# Optimized IntelliJ VM options
+RUN mkdir -p .config/JetBrains/IntelliJIdea2024.2 && \
+    echo '-Xms1g\n-Xmx4g\n-XX:ReservedCodeCacheSize=1g\n-XX:+UseG1GC\n-XX:+HeapDumpOnOutOfMemoryError\n-XX:-OmitStackTraceInFastThrow' > .config/JetBrains/IntelliJIdea2024.2/idea64.vmoptions
+
+# Use Xvfb instead of Xorg - much more reliable for resolution
+RUN echo '#!/usr/bin/env bash' > start.sh && \
+    echo 'set -exo pipefail' >> start.sh && \
+    echo 'mkdir -p "$XDG_RUNTIME_DIR/xpra"' >> start.sh && \
+    echo 'if [ -z "${DBUS_SESSION_BUS_ADDRESS:-}" ]; then eval $(dbus-launch --sh-syntax); fi' >> start.sh && \
+    echo 'exec xpra start-desktop :100 \\' >> start.sh && \
+    echo '    --xvfb="Xvfb +extension GLX +extension RANDR +extension RENDER -screen 0 1920x1080x24 :100" \\' >> start.sh && \
+    echo '    --start-child="openbox" \\' >> start.sh && \
+    echo '    --bind-tcp=0.0.0.0:$XPRA_HTML_PORT \\' >> start.sh && \
+    echo '    --html=on --tcp-auth=none \\' >> start.sh && \
+    echo '    --encoding=rgb \\' >> start.sh && \
+    echo '    --quality=90 \\' >> start.sh && \
+    echo '    --dpi=96 --desktop-scaling=1 --resize-display=no \\' >> start.sh && \
+    echo '    --opengl=on  --printing=no --webcam=no --file-transfer=on --pulseaudio=yes --audio=yes \\' >> start.sh && \
+    echo '    --daemon=no' >> start.sh && \
+    chmod +x start.sh
+
+EXPOSE 10000/tcp
+ENTRYPOINT ["./start.sh"]
