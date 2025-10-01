@@ -1,0 +1,91 @@
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    DISPLAY=:0 \
+    SELKIES_ENCODER=x264enc \
+    SELKIES_ENABLE_RESIZE=true \
+    SELKIES_BASIC_AUTH_PASSWORD=password
+
+# Install dependencies
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    jq tar gzip ca-certificates curl \
+    libwayland-dev libwayland-egl1 \
+    x11-utils x11-xkb-utils x11-xserver-utils xserver-xorg-core \
+    libx11-xcb1 libxcb-dri3-0 libxkbcommon0 libxdamage1 libxfixes3 \
+    libxv1 libxtst6 libxext6 xvfb xsel \
+    python3-pip python3-gi python3-dev build-essential gcc \
+    dbus-x11 sudo \
+    xfce4 xfce4-terminal firefox thunar \
+    libx264-164 libvpx9 libaom3 libopus0 \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create non-root user (remove ubuntu user first if exists)
+RUN userdel -r ubuntu 2>/dev/null || true && \
+    useradd -m -s /bin/bash -u 1000 coder && \
+    echo "coder ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/coder && \
+    chmod 0440 /etc/sudoers.d/coder
+
+# Download and install Selkies components
+ARG SELKIES_VERSION=1.6.2
+ARG UBUNTU_RELEASE=24.04
+
+RUN cd /opt && \
+    curl -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/gstreamer-selkies_gpl_v${SELKIES_VERSION}_ubuntu${UBUNTU_RELEASE}_amd64.tar.gz" | tar -xzf -
+
+RUN cd /tmp && \
+    curl -O -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && \
+    pip3 install --break-system-packages --no-cache-dir "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl" && \
+    rm -f "selkies_gstreamer-${SELKIES_VERSION}-py3-none-any.whl"
+
+RUN cd /opt && \
+    curl -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-web_v${SELKIES_VERSION}.tar.gz" | tar -xzf -
+
+# Set permissions for read-only filesystem
+RUN mkdir -p /run/user/1000 && \
+    chown -R coder:coder /run/user/1000 && \
+    chmod 700 /run/user/1000 && \
+    chown -R coder:coder /opt/gstreamer /opt/gst-web
+
+ENV GSTREAMER_PATH=/opt/gstreamer \
+    GST_DEBUG="*:2" \
+    XDG_RUNTIME_DIR=/run/user/1000
+
+USER coder
+WORKDIR /home/coder
+
+# Create startup script
+RUN echo '#!/bin/bash\n\
+set -e\n\
+\n\
+# Start dbus session bus (skip system bus to avoid config issues)\n\
+eval $(dbus-launch --sh-syntax)\n\
+export DBUS_SESSION_BUS_ADDRESS\n\
+export DBUS_SESSION_BUS_PID\n\
+\n\
+# Start Xvfb\n\
+Xvfb :0 -screen 0 1920x1080x24 +extension RANDR +extension GLX +extension COMPOSITE -nolisten tcp -ac &\n\
+echo "Waiting for X server..."\n\
+until [ -S "/tmp/.X11-unix/X0" ]; do sleep 0.5; done\n\
+\n\
+# Start XFCE desktop\n\
+startxfce4 &\n\
+sleep 5\n\
+\n\
+# Source GStreamer environment\n\
+. /opt/gstreamer/gst-env\n\
+\n\
+# Start Selkies (video only, no audio)\n\
+exec selkies-gstreamer \\\n\
+    --addr=0.0.0.0 \\\n\
+    --port=8080 \\\n\
+    --enable_https=false \\\n\
+    --basic_auth_user=coder \\\n\
+    --basic_auth_password=${SELKIES_BASIC_AUTH_PASSWORD} \\\n\
+    --encoder=${SELKIES_ENCODER} \\\n\
+    --enable_resize=${SELKIES_ENABLE_RESIZE} \\\n\
+    --audio_bitrate=0\n\
+' > /home/coder/entrypoint.sh && chmod +x /home/coder/entrypoint.sh
+
+EXPOSE 8080
+
+ENTRYPOINT ["/home/coder/entrypoint.sh"]
