@@ -1,0 +1,148 @@
+FROM debian:12-slim
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    DISPLAY=:0 \
+    XDG_RUNTIME_DIR=/tmp \
+    PULSE_RUNTIME_PATH=/tmp/pulse \
+    PULSE_SERVER=unix:/tmp/pulse/native \
+    SELKIES_ENCODER=x264enc \
+    SELKIES_BASIC_AUTH_USER=user \
+    SELKIES_BASIC_AUTH_PASSWORD=mypasswd \
+    LANG=fr_FR.UTF-8 \
+    LANGUAGE=fr_FR:fr \
+    LC_ALL=fr_FR.UTF-8
+
+# Install system dependencies for Selkies
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    # Selkies dependencies
+    jq tar gzip ca-certificates curl wget gnupg2 \
+    libpulse0 wayland-protocols libwayland-dev libwayland-egl1 \
+    x11-utils x11-xkb-utils x11-xserver-utils xserver-xorg-core \
+    libx11-xcb1 libxcb-dri3-0 libxkbcommon0 libxdamage1 libxfixes3 \
+    libxv1 libxtst6 libxext6 xvfb \
+    # Minimal desktop environment
+    fluxbox \
+    pcmanfm \
+    xterm \
+    feh \
+    # French locale
+    locales \
+    # Fonts
+    fonts-liberation \
+    fonts-dejavu-core \
+    # Basic utilities
+    procps \
+    && rm -rf /var/lib/apt/lists/*
+
+# Generate French locale
+RUN sed -i 's/^# *\(fr_FR.UTF-8\)/\1/' /etc/locale.gen && \
+    locale-gen fr_FR.UTF-8 && \
+    update-locale LANG=fr_FR.UTF-8
+
+# Install Google Chrome
+RUN wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | apt-key add - && \
+    echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" > /etc/apt/sources.list.d/google-chrome.list && \
+    apt-get update && \
+    apt-get install --no-install-recommends -y google-chrome-stable && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install VS Code
+RUN wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/packages.microsoft.gpg && \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list && \
+    apt-get update && \
+    apt-get install --no-install-recommends -y code && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create user coder with UID 1000
+RUN useradd -m -u 1000 -s /bin/bash coder
+
+# Switch to coder user
+USER coder
+WORKDIR /home/coder
+
+# Download and install Selkies GStreamer portable
+RUN export SELKIES_VERSION="$(curl -fsSL "https://api.github.com/repos/selkies-project/selkies/releases/latest" | jq -r '.tag_name' | sed 's/[^0-9\.\-]*//g')" && \
+    curl -fsSL "https://github.com/selkies-project/selkies/releases/download/v${SELKIES_VERSION}/selkies-gstreamer-portable-v${SELKIES_VERSION}_amd64.tar.gz" | tar -xzf - -C /home/coder
+
+# Download wallpaper
+RUN mkdir -p /home/coder/.config/wallpaper && \
+    curl -L "https://images.unsplash.com/photo-1649675211216-bf4b26942b88?q=80&w=1920&auto=format&fit=crop" \
+    -o /home/coder/.config/wallpaper/background.jpg
+
+# Create Fluxbox configuration with French keyboard layout
+RUN mkdir -p /home/coder/.fluxbox && \
+    echo "session.screen0.toolbar.visible: false" > /home/coder/.fluxbox/init && \
+    echo "session.screen0.slit.visible: false" >> /home/coder/.fluxbox/init && \
+    echo "[begin] (Menu)" > /home/coder/.fluxbox/menu && \
+    echo "  [exec] (Chrome) {google-chrome --no-sandbox --disable-dev-shm-usage}" >> /home/coder/.fluxbox/menu && \
+    echo "  [exec] (VS Code) {code --no-sandbox --disable-gpu}" >> /home/coder/.fluxbox/menu && \
+    echo "  [exec] (Terminal) {xterm}" >> /home/coder/.fluxbox/menu && \
+    echo "  [exec] (Gestionnaire de fichiers) {pcmanfm}" >> /home/coder/.fluxbox/menu && \
+    echo "  [separator]" >> /home/coder/.fluxbox/menu && \
+    echo "  [restart] (Redémarrer)" >> /home/coder/.fluxbox/menu && \
+    echo "[end]" >> /home/coder/.fluxbox/menu && \
+    mkdir -p /home/coder/Templates /home/coder/.config/pcmanfm/default && \
+    echo "[*Desktop*]" > /home/coder/.config/pcmanfm/default/desktop-items-0.conf && \
+    echo "wallpaper_mode=5" >> /home/coder/.config/pcmanfm/default/desktop-items-0.conf && \
+    echo "wallpaper_common=1" >> /home/coder/.config/pcmanfm/default/desktop-items-0.conf && \
+    echo "wallpaper=/home/coder/.config/wallpaper/background.jpg" >> /home/coder/.config/pcmanfm/default/desktop-items-0.conf && \
+    echo "desktop_bg=#2e3436" >> /home/coder/.config/pcmanfm/default/desktop-items-0.conf && \
+    echo "desktop_fg=#ffffff" >> /home/coder/.config/pcmanfm/default/desktop-items-0.conf && \
+    echo "desktop_shadow=#000000" >> /home/coder/.config/pcmanfm/default/desktop-items-0.conf && \
+    echo "#!/bin/bash" > /home/coder/.fluxbox/startup && \
+    echo "# Set French keyboard layout" >> /home/coder/.fluxbox/startup && \
+    echo "setxkbmap fr &" >> /home/coder/.fluxbox/startup && \
+    echo "" >> /home/coder/.fluxbox/startup && \
+    echo "# Set wallpaper" >> /home/coder/.fluxbox/startup && \
+    echo "feh --bg-scale /home/coder/.config/wallpaper/background.jpg &" >> /home/coder/.fluxbox/startup && \
+    echo "" >> /home/coder/.fluxbox/startup && \
+    echo "# Start PCManFM desktop" >> /home/coder/.fluxbox/startup && \
+    echo "pcmanfm --desktop &" >> /home/coder/.fluxbox/startup && \
+    echo "" >> /home/coder/.fluxbox/startup && \
+    echo "# Start Fluxbox" >> /home/coder/.fluxbox/startup && \
+    echo "exec fluxbox" >> /home/coder/.fluxbox/startup && \
+    chmod +x /home/coder/.fluxbox/startup
+
+# Create startup script
+RUN echo '#!/bin/bash' > /home/coder/start.sh && \
+    echo 'set -e' >> /home/coder/start.sh && \
+    echo '' >> /home/coder/start.sh && \
+    echo '# Create necessary directories' >> /home/coder/start.sh && \
+    echo 'mkdir -p /tmp/pulse /tmp/.X11-unix' >> /home/coder/start.sh && \
+    echo '' >> /home/coder/start.sh && \
+    echo '# Start Xvfb with French keyboard' >> /home/coder/start.sh && \
+    echo 'Xvfb :0 -screen 0 1920x1080x24 +extension RANDR +extension GLX +extension MIT-SHM -nolisten tcp -noreset &' >> /home/coder/start.sh && \
+    echo 'export DISPLAY=:0' >> /home/coder/start.sh && \
+    echo '' >> /home/coder/start.sh && \
+    echo '# Wait for X server' >> /home/coder/start.sh && \
+    echo 'echo "Waiting for X server..."' >> /home/coder/start.sh && \
+    echo 'timeout=30' >> /home/coder/start.sh && \
+    echo 'while [ ! -S "/tmp/.X11-unix/X0" ] && [ $timeout -gt 0 ]; do' >> /home/coder/start.sh && \
+    echo '  sleep 0.5' >> /home/coder/start.sh && \
+    echo '  timeout=$((timeout - 1))' >> /home/coder/start.sh && \
+    echo 'done' >> /home/coder/start.sh && \
+    echo '' >> /home/coder/start.sh && \
+    echo '# Set French keyboard layout' >> /home/coder/start.sh && \
+    echo 'setxkbmap fr' >> /home/coder/start.sh && \
+    echo '' >> /home/coder/start.sh && \
+    echo '# Start Fluxbox (which will start PCManFM via startup script)' >> /home/coder/start.sh && \
+    echo 'fluxbox &' >> /home/coder/start.sh && \
+    echo 'sleep 2' >> /home/coder/start.sh && \
+    echo '' >> /home/coder/start.sh && \
+    echo '# Start Selkies GStreamer' >> /home/coder/start.sh && \
+    echo '/home/coder/selkies-gstreamer/selkies-gstreamer-run \' >> /home/coder/start.sh && \
+    echo '  --addr=0.0.0.0 \' >> /home/coder/start.sh && \
+    echo '  --port=8080 \' >> /home/coder/start.sh && \
+    echo '  --enable_https=false \' >> /home/coder/start.sh && \
+    echo '  --basic_auth_user=${SELKIES_BASIC_AUTH_USER:-user} \' >> /home/coder/start.sh && \
+    echo '  --basic_auth_password=${SELKIES_BASIC_AUTH_PASSWORD:-mypasswd} \' >> /home/coder/start.sh && \
+    echo '  --encoder=x264enc \' >> /home/coder/start.sh && \
+    echo '  --enable_resize=true' >> /home/coder/start.sh && \
+    chmod +x /home/coder/start.sh
+
+# Expose web interface port
+EXPOSE 8080
+
+# Start script
+CMD ["/home/coder/start.sh"]
