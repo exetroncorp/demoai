@@ -1,0 +1,10 @@
+python -m nuitka \
+    --standalone \
+    --onefile \
+    --enable-plugin=tk-inter \
+    --include-data-dir=./assets=assets \
+    --linux-icon=./assets/icon.png \
+    --remove-output \
+    --assume-yes-for-downloads \
+    --output-filename=my_app \
+    main.py
