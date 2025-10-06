@@ -1,0 +1,4 @@
+proxy \
+  --port 14444 \
+  --plugins proxy.plugin.proxy_pool.ProxyPoolPlugin \
+  --proxy-pool https://lyactbqj:jw1fd2v1cpyf@142.111.48.253:7030
