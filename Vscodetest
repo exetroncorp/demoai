@@ -1,0 +1,5 @@
+"extensionsGallery": {
+  "serviceUrl": "https://marketplace.visualstudio.com/_apis/public/gallery",
+  "itemUrl": "https://marketplace.visualstudio.com/items",
+  "resourceUrlTemplate": "https://marketplace.visualstudio.com/_apis/public/gallery/publisher/{publisher}/extension/{name}/{version}/assetbyname/{path}"
+}
