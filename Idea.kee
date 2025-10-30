@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+"""
+IntelliJ IDEA KeePass Password Manager
+Encrypts/decrypts passwords using IntelliJ's encryption method
+Manages KeePass database entries
+"""
+
+import sys
+import hashlib
+import argparse
+from pykeepass import PyKeePass
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+
+# IntelliJ's fixed IV for data encryption (from source code)
+CBC_SALT_DATA = bytes([119, 111, 163, 2, 213, 244, 117, 82, 
+                       12, 40, 69, 222, 78, 86, 159, 95])
+
+def get_encryption_key(master_password):
+    """Generate AES key from master password using SHA-256"""
+    key = hashlib.sha256(master_password.encode('utf-8')).digest()[:16]
+    return key
+
+def encrypt_for_intellij(plaintext, master_password):
+    """
+    Encrypt password exactly like IntelliJ does
+    Based on: github.com/JetBrains/intellij-community/.../EncryptionUtil.java
+    """
+    # 1. Hash the master password to create AES key (SHA-256)
+    key = get_encryption_key(master_password)
+    
+    # 2. Convert plaintext to bytes
+    data = plaintext.encode('utf-8')
+    data_len = len(data)
+    
+    # 3. Create 4-byte length prefix (Big Endian)
+    length_prefix = data_len.to_bytes(4, byteorder='big')
+    
+    # 4. Combine length + data
+    plain_with_length = length_prefix + data
+    
+    # 5. Pad to AES block size (16 bytes) using PKCS5
+    padded = pad(plain_with_length, AES.block_size)
+    
+    # 6. Encrypt using AES-CBC with fixed IV
+    cipher = AES.new(key, AES.MODE_CBC, CBC_SALT_DATA)
+    encrypted = cipher.encrypt(padded)
+    
+    return encrypted
+
+def decrypt_from_intellij(encrypted_bytes, master_password):
+    """
+    Decrypt password the way IntelliJ does
+    """
+    try:
+        # 1. Hash the master password to create AES key
+        key = get_encryption_key(master_password)
+        
+        # 2. Decrypt using AES-CBC with fixed IV
+        cipher = AES.new(key, AES.MODE_CBC, CBC_SALT_DATA)
+        decrypted_padded = cipher.decrypt(encrypted_bytes)
+        
+        # 3. Remove padding
+        decrypted = unpad(decrypted_padded, AES.block_size)
+        
+        # 4. Extract length prefix (first 4 bytes, Big Endian)
+        data_len = int.from_bytes(decrypted[:4], byteorder='big')
+        
+        # 5. Extract actual data
+        plaintext = decrypted[4:4+data_len].decode('utf-8')
+        
+        return plaintext
+    except Exception as e:
+        raise Exception(f"Decryption failed: {e}")
+
+def add_password(kdbx_path, kdbx_password, entry_path, entry_title, secret, master_password):
+    """
+    Add an encrypted password to KeePass database
+    entry_path: path like "IntelliJ IDEA" or "IntelliJ IDEA/Credentials"
+    """
+    try:
+        # Open KeePass database
+        kp = PyKeePass(kdbx_path, password=kdbx_password)
+        
+        # Encrypt the secret
+        encrypted = encrypt_for_intellij(secret, master_password)
+        
+        # Parse the entry path
+        path_parts = entry_path.split('/')
+        
+        # Find or create group
+        group = kp.root_group
+        for part in path_parts:
+            found = False
+            for g in group.subgroups:
+                if g.name == part:
+                    group = g
+                    found = True
+                    break
+            if not found:
+                group = kp.add_group(group, part)
+        
+        # Check if entry already exists
+        existing = kp.find_entries(title=entry_title, group=group, first=True)
+        if existing:
+            # Update existing entry
+            existing.password = encrypted.decode('latin-1')  # Store as binary
+            print(f"✓ Updated existing entry: {entry_path}/{entry_title}")
+        else:
+            # Create new entry
+            kp.add_entry(group, entry_title, '', encrypted.decode('latin-1'))
+            print(f"✓ Added new entry: {entry_path}/{entry_title}")
+        
+        # Save database
+        kp.save()
+        print(f"✓ Saved to database: {kdbx_path}")
+        
+    except Exception as e:
+        print(f"✗ Error adding password: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def get_password(kdbx_path, kdbx_password, entry_path, entry_title, master_password):
+    """
+    Retrieve and decrypt password from KeePass database
+    """
+    try:
+        # Open KeePass database
+        kp = PyKeePass(kdbx_path, password=kdbx_password)
+        
+        # Parse the entry path
+        path_parts = entry_path.split('/')
+        
+        # Find group
+        group = kp.root_group
+        for part in path_parts:
+            found = False
+            for g in group.subgroups:
+                if g.name == part:
+                    group = g
+                    found = True
+                    break
+            if not found:
+                raise Exception(f"Group not found: {part}")
+        
+        # Find entry
+        entry = kp.find_entries(title=entry_title, group=group, first=True)
+        if not entry:
+            raise Exception(f"Entry not found: {entry_title}")
+        
+        # Get encrypted password (stored as binary)
+        encrypted = entry.password.encode('latin-1')
+        
+        # Decrypt
+        plaintext = decrypt_from_intellij(encrypted, master_password)
+        
+        return plaintext
+        
+    except Exception as e:
+        print(f"✗ Error retrieving password: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def list_entries(kdbx_path, kdbx_password, entry_path=None):
+    """
+    List all entries in KeePass database or in a specific path
+    """
+    try:
+        kp = PyKeePass(kdbx_path, password=kdbx_password)
+        
+        if entry_path:
+            # Parse and find specific group
+            path_parts = entry_path.split('/')
+            group = kp.root_group
+            for part in path_parts:
+                found = False
+                for g in group.subgroups:
+                    if g.name == part:
+                        group = g
+                        found = True
+                        break
+                if not found:
+                    print(f"Group not found: {part}")
+                    return
+            entries = group.entries
+        else:
+            # List all entries
+            entries = kp.entries
+        
+        print(f"\nEntries in {entry_path if entry_path else 'database'}:")
+        print("-" * 60)
+        for entry in entries:
+            group_path = "/".join([g.name for g in entry.group.path])
+            print(f"  {group_path}/{entry.title}")
+        print("-" * 60)
+        print(f"Total: {len(entries)} entries\n")
+        
+    except Exception as e:
+        print(f"✗ Error listing entries: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Manage IntelliJ IDEA passwords in KeePass',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # Add a password
+  %(prog)s add --kdbx ~/c.kdbx --kdbx-pass zoubida \\
+      --path "IntelliJ IDEA" --title "GitHub Token" \\
+      --secret "ghp_xxxxx" --master-pass zoubida
+
+  # Retrieve a password
+  %(prog)s get --kdbx ~/c.kdbx --kdbx-pass zoubida \\
+      --path "IntelliJ IDEA" --title "GitHub Token" \\
+      --master-pass zoubida
+
+  # List entries
+  %(prog)s list --kdbx ~/c.kdbx --kdbx-pass zoubida \\
+      --path "IntelliJ IDEA"
+        """
+    )
+    
+    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
+    
+    # Add command
+    add_parser = subparsers.add_parser('add', help='Add encrypted password to KeePass')
+    add_parser.add_argument('--kdbx', required=True, help='Path to KeePass database')
+    add_parser.add_argument('--kdbx-pass', required=True, help='KeePass database password')
+    add_parser.add_argument('--path', required=True, help='Entry path (e.g., "IntelliJ IDEA")')
+    add_parser.add_argument('--title', required=True, help='Entry title')
+    add_parser.add_argument('--secret', required=True, help='Secret to encrypt and store')
+    add_parser.add_argument('--master-pass', required=True, help='Master password for encryption')
+    
+    # Get command
+    get_parser = subparsers.add_parser('get', help='Get and decrypt password from KeePass')
+    get_parser.add_argument('--kdbx', required=True, help='Path to KeePass database')
+    get_parser.add_argument('--kdbx-pass', required=True, help='KeePass database password')
+    get_parser.add_argument('--path', required=True, help='Entry path')
+    get_parser.add_argument('--title', required=True, help='Entry title')
+    get_parser.add_argument('--master-pass', required=True, help='Master password for decryption')
+    
+    # List command
+    list_parser = subparsers.add_parser('list', help='List entries in KeePass')
+    list_parser.add_argument('--kdbx', required=True, help='Path to KeePass database')
+    list_parser.add_argument('--kdbx-pass', required=True, help='KeePass database password')
+    list_parser.add_argument('--path', help='Entry path to list (optional)')
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+    
+    if args.command == 'add':
+        add_password(
+            args.kdbx,
+            args.kdbx_pass,
+            args.path,
+            args.title,
+            args.secret,
+            args.master_pass
+        )
+    elif args.command == 'get':
+        password = get_password(
+            args.kdbx,
+            args.kdbx_pass,
+            args.path,
+            args.title,
+            args.master_pass
+        )
+        print(password)
+    elif args.command == 'list':
+        list_entries(args.kdbx, args.kdbx_pass, args.path)
+
+if __name__ == '__main__':
+    main()
