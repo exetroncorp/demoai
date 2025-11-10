@@ -1,0 +1,17 @@
+# 1. Install patchelf
+nix-shell -p patchelf
+
+# 2. Find the glibc loader in your bundle
+cd qemu-portable
+LOADER=$(find . -name "ld-linux-x86-64.so.2" | head -1)
+echo $LOADER
+# Should show something like: ./xxxxx-glibc-2.40-27/lib/ld-linux-x86-64.so.2
+
+# 3. Patch ALL binaries in the bin directory
+for binary in bin/*; do
+    if [ -f "$binary" ] && file "$binary" | grep -q ELF; then
+        echo "Patching $binary"
+        patchelf --set-interpreter "$LOADER" "$binary"
+        patchelf --set-rpath "\$ORIGIN/../lib:\$ORIGIN/../lib64" "$binary"
+    fi
+done
