@@ -1,0 +1,75 @@
+I understand your situation - you want to compile QEMU from a locally downloaded `.drv` (derivation) into a portable binary without accessing GitHub (which is blocked for you).
+
+Here are several approaches:
+
+## 1. **Build from local derivation and create a portable bundle**
+
+First, realize the derivation locally:
+```bash
+# Get the derivation path
+nix-instantiate '<nixpkgs>' -A qemu
+
+# Build it locally (this uses your nixos cache)
+nix-store -r /nix/store/...-qemu-X.X.X.drv
+
+# Find the output path
+nix-build '<nixpkgs>' -A qemu --no-out-link
+```
+
+## 2. **Use nix-bundle alternatives**
+
+Since `nix-bundle` tries to fetch from GitHub, try **`nix bundle`** (the official Nix 2.4+ command) with a local bundler:
+
+```bash
+# Using nix-static (if you have it locally)
+nix bundle --bundler github:NixOS/bundlers#toDockerImage nixpkgs#qemu
+```
+
+But since GitHub is blocked, you need to work around this.
+
+## 3. **Manual approach: Create a relocatable bundle**
+
+```bash
+# Build QEMU
+QEMU_PATH=$(nix-build '<nixpkgs>' -A qemu --no-out-link)
+
+# Copy all dependencies to a local directory
+mkdir -p ./qemu-bundle
+nix-store -qR $QEMU_PATH | xargs -I {} cp -r {} ./qemu-bundle/
+
+# Create a wrapper script
+cat > qemu-bundle/run-qemu.sh << 'EOF'
+#!/bin/sh
+BUNDLE_DIR=$(dirname $(readlink -f "$0"))
+export LD_LIBRARY_PATH="$BUNDLE_DIR/lib:$LD_LIBRARY_PATH"
+exec "$BUNDLE_DIR/bin/qemu-system-x86_64" "$@"
+EOF
+chmod +x qemu-bundle/run-qemu.sh
+```
+
+## 4. **Use nix-user-chroot or proot** (most portable)
+
+```bash
+# Build a closure
+nix-build '<nixpkgs>' -A qemu -o result
+nix-store --export $(nix-store -qR result) > qemu-closure.nar
+
+# On target machine (without Nix):
+# Use proot to run it in a fake /nix/store
+```
+
+## 5. **Static binary approach** (cleanest)
+
+```bash
+# Build statically linked QEMU (if available)
+nix-build '<nixpkgs>' -A pkgsStatic.qemu
+```
+
+## 6. **Create your own bundler locally**
+
+If you have the bundler code mirrored, point to it:
+```bash
+nix bundle --bundler /path/to/local/bundler nixpkgs#qemu
+```
+
+**Which approach would work best for your use case?** The static binary (#5) is cleanest if available, otherwise the manual closure copy (#3) gives you full control without external dependencies.
