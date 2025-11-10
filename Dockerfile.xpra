@@ -1,0 +1,438 @@
+# Xpra HTML5 Remote Desktop for IntelliJ IDEA
+# Optimized for CPU-only, low IOPS, rootless Kubernetes environment
+# Alternative to KasmVNC for comparison
+# Xpra Version: Latest LTS from https://xpra.org/lts/bookworm/
+
+FROM debian:12-slim
+
+# Build arguments
+ARG IDEA_VERSION=2025.2.4
+ARG USER=developer
+ARG UID=1000
+ARG GID=1000
+
+# Environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=en_US.UTF-8 \
+    LANGUAGE=en_US:en \
+    LC_ALL=en_US.UTF-8
+
+# Add Xpra official repository (LTS version)
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    wget \
+    gnupg2 \
+    software-properties-common \
+    && wget -O "/usr/share/keyrings/xpra.asc" https://xpra.org/gpg.asc \
+    && echo "deb [signed-by=/usr/share/keyrings/xpra.asc] https://xpra.org/ bookworm main" > /etc/apt/sources.list.d/xpra.list \
+    && apt-get update \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Xpra and dependencies
+RUN apt-get update && apt-get install -y \
+    # Base system
+    locales \
+    dbus-x11 \
+    # Xpra from official repo (latest LTS)
+    # Note: xpra package includes all necessary components
+    xpra \
+    xpra-html5 \
+    # Desktop environment (lightweight - NO goodies to avoid plugin crashes)
+    xfce4 \
+    xfce4-terminal \
+    # Display and window management
+    x11-utils \
+    x11-xserver-utils \
+    xdotool \
+    wmctrl \
+    # Fonts for better IDE rendering
+    fonts-liberation \
+    fonts-dejavu \
+    fonts-noto \
+    fonts-noto-color-emoji \
+    # Java runtime for IntelliJ IDEA
+    openjdk-17-jdk \
+    openjdk-17-jre \
+    # Development tools
+    git \
+    vim \
+    nano \
+    htop \
+    # Audio support (optional)
+    pulseaudio \
+    pulseaudio-utils \
+    # Compression tools
+    tar \
+    gzip \
+    bzip2 \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Generate locales
+RUN echo "en_US.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen
+
+# Create non-root user
+RUN groupadd -g ${GID} ${USER} && \
+    useradd -m -u ${UID} -g ${GID} -s /bin/bash ${USER}
+
+# Download and install IntelliJ IDEA Community Edition
+# Use IDEA_VERSION variable to ensure consistency
+RUN wget -q https://download.jetbrains.com/idea/ideaIC-${IDEA_VERSION}.tar.gz -O /tmp/idea.tar.gz && \
+    mkdir -p /opt/idea && \
+    tar -xzf /tmp/idea.tar.gz -C /opt/idea --strip-components=1 && \
+    rm /tmp/idea.tar.gz && \
+    ln -s /opt/idea/bin/idea /usr/local/bin/idea
+
+# Override the default idea64.vmoptions with our custom settings
+# CRITICAL: This must be AFTER the tar extraction to override the default file
+COPY <<'JVM_EOF' /opt/idea/bin/idea64.vmoptions
+# Custom JVM options for containerized environment with Xpra
+-Xms2g
+-Xmx4g
+-XX:ReservedCodeCacheSize=512m
+-XX:+UseG1GC
+-XX:SoftRefLRUPolicyMSPerMB=50
+-XX:CICompilerCount=2
+-XX:+HeapDumpOnOutOfMemoryError
+-XX:-OmitStackTraceInFastThrow
+-ea
+-Dsun.io.useCanonCaches=false
+-Djdk.http.auth.tunneling.disabledSchemes=""
+-Djdk.attach.allowAttachSelf=true
+-Djdk.module.illegalAccess.silent=true
+-Dkotlinx.coroutines.debug=off
+# Disable file watchers to reduce IOPS
+-Dide.watcher.disabled=true
+# DISABLE OpenGL and hardware acceleration
+-Dsun.java2d.opengl=false
+-Dsun.java2d.d3d=false
+-Dawt.useSystemAAFontSettings=on
+-Dswing.aatext=true
+JVM_EOF
+
+# Switch to non-root user
+USER ${USER}
+WORKDIR /home/${USER}
+
+# Create necessary directories
+RUN mkdir -p \
+    ~/.config/xpra \
+    ~/.config/xfce4 \
+    ~/.config/JetBrains/IdeaIC${IDEA_VERSION}/options \
+    ~/workspace \
+    ~/Desktop
+
+# Create desktop shortcut for IntelliJ IDEA
+RUN echo '[Desktop Entry]' > ~/Desktop/idea.desktop && \
+    echo 'Version=1.0' >> ~/Desktop/idea.desktop && \
+    echo 'Type=Application' >> ~/Desktop/idea.desktop && \
+    echo 'Name=IntelliJ IDEA' >> ~/Desktop/idea.desktop && \
+    echo 'Icon=/opt/idea/bin/idea.svg' >> ~/Desktop/idea.desktop && \
+    echo 'Exec=/opt/idea/bin/idea %f' >> ~/Desktop/idea.desktop && \
+    echo 'Comment=IntelliJ IDEA Community Edition' >> ~/Desktop/idea.desktop && \
+    echo 'Categories=Development;IDE;' >> ~/Desktop/idea.desktop && \
+    echo 'Terminal=false' >> ~/Desktop/idea.desktop && \
+    echo 'StartupWMClass=jetbrains-idea-ce' >> ~/Desktop/idea.desktop && \
+    chmod +x ~/Desktop/idea.desktop
+
+# Create wrapper script to launch IDEA (let Xpra HTML5 handle positioning)
+COPY <<'IDEA_WRAPPER_EOF' /home/${USER}/launch-idea-maximized.sh
+#!/bin/bash
+# Launch IntelliJ IDEA without splash screen
+# Note: Window positioning is handled by Xpra HTML5 client and IntelliJ's window.manager.xml
+# xdotool doesn't work properly with Xpra HTML5 window manager
+# nosplash: prevents the splash screen from appearing in bottom-right corner
+echo "Launching IntelliJ IDEA (no splash)..."
+exec /opt/idea/bin/idea nosplash
+IDEA_WRAPPER_EOF
+
+# Create delayed launcher for IntelliJ IDEA (wait for XFCE to fully start)
+COPY <<'DELAYED_LAUNCHER_EOF' /home/${USER}/delayed-idea-launch.sh
+#!/bin/bash
+# Wait for XFCE to fully initialize before launching IDEA
+# This prevents window positioning issues with Xpra HTML5
+echo "Waiting 10 seconds for XFCE to fully start..."
+sleep 10
+echo "Launching IntelliJ IDEA..."
+/home/developer/launch-idea-maximized.sh
+DELAYED_LAUNCHER_EOF
+
+# Create autostart for IntelliJ IDEA (launch on startup with delay)
+RUN mkdir -p ~/.config/autostart && \
+    echo '[Desktop Entry]' > ~/.config/autostart/idea.desktop && \
+    echo 'Type=Application' >> ~/.config/autostart/idea.desktop && \
+    echo 'Name=IntelliJ IDEA' >> ~/.config/autostart/idea.desktop && \
+    echo 'Exec=/home/developer/delayed-idea-launch.sh' >> ~/.config/autostart/idea.desktop && \
+    echo 'Hidden=false' >> ~/.config/autostart/idea.desktop && \
+    echo 'NoDisplay=false' >> ~/.config/autostart/idea.desktop && \
+    echo 'X-GNOME-Autostart-enabled=true' >> ~/.config/autostart/idea.desktop
+
+# Note: Cursor fix removed - causes permission issues during build
+# The double cursor issue is minor compared to performance optimizations
+
+# Configure XFCE to be lightweight
+RUN mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml && \
+    printf '%s\n' \
+    '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<channel name="xfce4-desktop" version="1.0">' \
+    '  <property name="backdrop" type="empty">' \
+    '    <property name="screen0" type="empty">' \
+    '      <property name="monitor0" type="empty">' \
+    '        <property name="workspace0" type="empty">' \
+    '          <property name="color-style" type="int" value="0"/>' \
+    '          <property name="image-style" type="int" value="0"/>' \
+    '        </property>' \
+    '      </property>' \
+    '    </property>' \
+    '  </property>' \
+    '</channel>' \
+    > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-desktop.xml
+
+# Configure XFCE Window Manager for better focus and z-order
+RUN mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml && \
+    printf '%s\n' \
+    '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<channel name="xfwm4" version="1.0">' \
+    '  <property name="general" type="empty">' \
+    '    <property name="click_to_focus" type="bool" value="true"/>' \
+    '    <property name="focus_delay" type="int" value="0"/>' \
+    '    <property name="focus_hint" type="bool" value="true"/>' \
+    '    <property name="focus_new" type="bool" value="true"/>' \
+    '    <property name="raise_on_click" type="bool" value="true"/>' \
+    '    <property name="raise_on_focus" type="bool" value="true"/>' \
+    '    <property name="raise_with_any_button" type="bool" value="true"/>' \
+    '    <property name="prevent_focus_stealing" type="bool" value="false"/>' \
+    '    <property name="activate_action" type="string" value="bring"/>' \
+    '    <property name="placement_mode" type="string" value="center"/>' \
+    '    <property name="use_compositing" type="bool" value="false"/>' \
+    '    <property name="borderless_maximize" type="bool" value="true"/>' \
+    '    <property name="titleless_maximize" type="bool" value="false"/>' \
+    '    <property name="workspace_count" type="int" value="1"/>' \
+    '  </property>' \
+    '</channel>' \
+    > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfwm4.xml
+
+# Disable XFCE panel to avoid top bar issues
+RUN mkdir -p ~/.config/xfce4/panel && \
+    echo '# Disable panel' > ~/.config/xfce4/panel/panels.xml
+
+# Disable XFCE plugins that cause crashes (Power Manager, etc.)
+RUN mkdir -p ~/.config/autostart && \
+    printf '%s\n' \
+    '[Desktop Entry]' \
+    'Hidden=true' \
+    > ~/.config/autostart/xfce4-power-manager.desktop && \
+    printf '%s\n' \
+    '[Desktop Entry]' \
+    'Hidden=true' \
+    > ~/.config/autostart/xfce4-screensaver.desktop && \
+    printf '%s\n' \
+    '[Desktop Entry]' \
+    'Hidden=true' \
+    > ~/.config/autostart/xfce4-notifyd.desktop
+
+# Configure XFCE session to disable problematic plugins AND terminal auto-launch
+RUN mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml && \
+    printf '%s\n' \
+    '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<channel name="xfce4-session" version="1.0">' \
+    '  <property name="general" type="empty">' \
+    '    <property name="FailsafeSessionName" type="string" value="Failsafe"/>' \
+    '    <property name="SaveOnExit" type="bool" value="false"/>' \
+    '  </property>' \
+    '  <property name="sessions" type="empty">' \
+    '    <property name="Failsafe" type="empty">' \
+    '      <property name="IsFailsafe" type="bool" value="true"/>' \
+    '      <property name="Count" type="int" value="1"/>' \
+    '      <property name="Client0_Command" type="array">' \
+    '        <value type="string" value="xfwm4"/>' \
+    '      </property>' \
+    '      <property name="Client0_PerScreen" type="bool" value="false"/>' \
+    '    </property>' \
+    '  </property>' \
+    '  <property name="compat" type="empty">' \
+    '    <property name="LaunchGNOME" type="bool" value="false"/>' \
+    '  </property>' \
+    '  <property name="startup" type="empty">' \
+    '    <property name="screensaver" type="empty">' \
+    '      <property name="enabled" type="bool" value="false"/>' \
+    '    </property>' \
+    '  </property>' \
+    '</channel>' \
+    > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xfce4-session.xml
+
+# Disable xfce4-terminal from auto-starting
+RUN printf '%s\n' \
+    '[Desktop Entry]' \
+    'Hidden=true' \
+    > ~/.config/autostart/xfce4-terminal.desktop
+
+# Configure XFCE cursor settings to prevent huge cursor
+RUN mkdir -p ~/.config/xfce4/xfconf/xfce-perchannel-xml && \
+    printf '%s\n' \
+    '<?xml version="1.0" encoding="UTF-8"?>' \
+    '<channel name="xsettings" version="1.0">' \
+    '  <property name="Gtk" type="empty">' \
+    '    <property name="CursorThemeName" type="string" value="Adwaita"/>' \
+    '    <property name="CursorThemeSize" type="int" value="16"/>' \
+    '  </property>' \
+    '  <property name="Xft" type="empty">' \
+    '    <property name="DPI" type="int" value="96"/>' \
+    '    <property name="Antialias" type="int" value="1"/>' \
+    '    <property name="Hinting" type="int" value="1"/>' \
+    '    <property name="HintStyle" type="string" value="hintslight"/>' \
+    '    <property name="RGBA" type="string" value="rgb"/>' \
+    '  </property>' \
+    '</channel>' \
+    > ~/.config/xfce4/xfconf/xfce-perchannel-xml/xsettings.xml
+
+# Note: Xpra configuration is done via command-line arguments in start-xpra.sh
+# No xpra.conf file needed - all settings are in the startup script
+
+# Create IntelliJ IDEA configuration for low IOPS
+RUN mkdir -p ~/.config/JetBrains/IdeaIC${IDEA_VERSION}/options
+COPY <<'IDE_XML_EOF' /home/${USER}/.config/JetBrains/IdeaIC${IDEA_VERSION}/options/ide.general.xml
+<application>
+  <component name="GeneralSettings">
+    <option name="autoSaveIfInactive" value="true" />
+    <option name="inactiveTimeout" value="30" />
+    <option name="useSafeWrite" value="false" />
+    <option name="syncOnFrameActivation" value="false" />
+  </component>
+  <component name="Registry">
+    <entry key="ide.watcher.disabled" value="true" />
+    <entry key="compiler.automake.allow.when.app.running" value="false" />
+    <entry key="ide.async.project.opening" value="true" />
+  </component>
+</application>
+IDE_XML_EOF
+
+# Create window manager configuration for centered windows (not maximized)
+# extended-state="0" means normal (not maximized)
+# Window will be centered by XFCE window manager (placement_mode=center)
+COPY <<'WINDOW_XML_EOF' /home/${USER}/.config/JetBrains/IdeaIC${IDEA_VERSION}/options/window.manager.xml
+<application>
+  <component name="WindowManager">
+    <frame x="-1" y="-1" width="1400" height="900" extended-state="0" />
+  </component>
+</application>
+WINDOW_XML_EOF
+
+# Create idea.properties to redirect ALL caches to RAM disk (THE CRITICAL FIX)
+COPY <<'IDEA_PROPS_EOF' /opt/idea/bin/idea.properties
+# Redirect all IDE caches to RAM disk for maximum performance on low IOPS storage
+# This is THE solution to the 10 IOPS bottleneck
+idea.system.path=/tmp/ide-cache/system
+idea.config.path=/tmp/ide-cache/config
+idea.plugins.path=/tmp/ide-cache/plugins
+idea.log.path=/tmp/ide-cache/log
+
+# Additional performance settings
+idea.max.intellisense.filesize=2500
+idea.cycle.buffer.size=disabled
+IDEA_PROPS_EOF
+
+# Create startup script
+COPY <<'SCRIPT_EOF' /home/${USER}/start-xpra.sh
+#!/bin/bash
+set -e
+
+# Create RAM disk directories for IDE caches (THE CRITICAL FIX)
+echo "Creating RAM disk directories for IntelliJ IDEA caches..."
+mkdir -p /tmp/ide-cache/system
+mkdir -p /tmp/ide-cache/config
+mkdir -p /tmp/ide-cache/plugins
+mkdir -p /tmp/ide-cache/log
+echo "RAM disk ready at /tmp/ide-cache"
+
+# Note: Java rendering options are now set in idea.properties instead of _JAVA_OPTIONS
+# This makes them IDE-specific and doesn't affect other Java applications
+
+# Start D-Bus (required for XFCE)
+if [ -z "$DBUS_SESSION_BUS_ADDRESS" ]; then
+    eval $(dbus-launch --sh-syntax)
+fi
+
+# Start PulseAudio (optional)
+pulseaudio --start --exit-idle-time=-1 2>/dev/null || true
+
+# Set display
+export DISPLAY=:100
+
+# Fix cursor size with X11 resources
+cat > ~/.Xresources << 'XRES_EOF'
+Xcursor.theme: Adwaita
+Xcursor.size: 16
+Xft.dpi: 96
+Xft.antialias: 1
+Xft.hinting: 1
+Xft.hintstyle: hintslight
+Xft.rgba: rgb
+XRES_EOF
+
+# Start Xpra with XFCE desktop (v6.3.5 compatible options)
+echo "Starting Xpra server on :100..."
+echo "Using Xpra version: $(xpra --version | head -n1)"
+
+# Start Xpra in foreground mode (OPTIMIZED FOR LOW-CPU, NO GPU)
+# Xpra v6.3.5 compatible options - minimal set
+# FIX: Use fixed DPI and disable auto-scaling to fix cursor size
+# FIX: Disable cursor scaling to prevent huge cursor
+exec xpra start :100 \
+    --bind-tcp=0.0.0.0:8080 \
+    --html=on \
+    --start=startxfce4 \
+    --no-daemon \
+    --opengl=no \
+    --encodings=h264,png,webp \
+    --video-encoders=h264 \
+    --quality=40 \
+    --min-quality=30 \
+    --speed=100 \
+    --min-speed=80 \
+    --exit-with-children=no \
+    --notifications=no \
+    --system-tray=yes \
+    --clipboard=yes \
+    --clipboard-direction=both \
+    --pulseaudio=no \
+    --speaker=disabled \
+    --microphone=disabled \
+    --printing=no \
+    --resize-display=no \
+    --desktop-scaling=off \
+    --dpi=96 \
+    --cursors=no \
+    --mmap=yes \
+    --file-transfer=yes \
+    --log-dir=/tmp/xpra-logs \
+    --html=/usr/share/xpra/www
+SCRIPT_EOF
+
+# Set ownership and permissions (as root before switching to user)
+USER root
+RUN mkdir -p /home/${USER}/.cache /home/${USER}/.config /home/${USER}/.local && \
+    chown -R ${USER}:${USER} /home/${USER} /opt/idea && \
+    chmod +x /home/${USER}/start-xpra.sh && \
+    chmod +x /home/${USER}/launch-idea-maximized.sh && \
+    chmod +x /home/${USER}/delayed-idea-launch.sh
+USER ${USER}
+
+# Environment variables for runtime
+ENV DISPLAY=:100 \
+    XPRA_PORT=8080 \
+    XPRA_ENCODING=rgb \
+    XPRA_HTML=on
+
+# Expose Xpra HTML5 port
+EXPOSE 8080
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/ || exit 1
+
+# Start Xpra
+CMD ["/home/developer/start-xpra.sh"]
+

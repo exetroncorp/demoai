@@ -1,0 +1,229 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: remote-ide-xpra
+  labels:
+    name: remote-ide-xpra
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: workspace-pvc-xpra
+  namespace: remote-ide-xpra
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: ibmc-block-gold  # 10 IOPS/GB on IBM Cloud
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: remote-ide-xpra
+  namespace: remote-ide-xpra
+  labels:
+    app: remote-ide-xpra
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: remote-ide-xpra
+  template:
+    metadata:
+      labels:
+        app: remote-ide-xpra
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      
+      containers:
+      - name: xpra-ide
+        image: your-registry/remote-ide-xpra:latest
+        imagePullPolicy: Always
+        
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        
+        env:
+        - name: DISPLAY
+          value: ":100"
+        - name: XPRA_PORT
+          value: "8080"
+        - name: XPRA_ENCODING
+          value: "rgb"
+        - name: XPRA_HTML
+          value: "on"
+        - name: _JAVA_OPTIONS
+          value: "-Dsun.java2d.opengl=false -Dsun.java2d.d3d=false -Dawt.useSystemAAFontSettings=on -Dswing.aatext=true"
+        
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "2000m"
+          limits:
+            memory: "8Gi"
+            cpu: "4000m"
+        
+        volumeMounts:
+        # Persistent workspace on PVC
+        - name: workspace
+          mountPath: /home/developer/workspace
+        
+        # tmpfs volumes to reduce IOPS (critical!)
+        - name: tmp
+          mountPath: /tmp
+        - name: shm
+          mountPath: /dev/shm
+        - name: cache
+          mountPath: /home/developer/.cache
+        - name: jetbrains-local
+          mountPath: /home/developer/.local/share/JetBrains
+        - name: xpra-logs
+          mountPath: /home/developer/.xpra
+        
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false
+        
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+          failureThreshold: 3
+        
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+      
+      volumes:
+      # Persistent volume for workspace
+      - name: workspace
+        persistentVolumeClaim:
+          claimName: workspace-pvc-xpra
+      
+      # tmpfs volumes (memory-backed) to minimize IOPS
+      - name: tmp
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Gi
+      - name: shm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Gi
+      - name: cache
+        emptyDir:
+          medium: Memory
+          sizeLimit: 2Gi
+      - name: jetbrains-local
+        emptyDir:
+          medium: Memory
+          sizeLimit: 1Gi
+      - name: xpra-logs
+        emptyDir:
+          medium: Memory
+          sizeLimit: 512Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: remote-ide-xpra-service
+  namespace: remote-ide-xpra
+  labels:
+    app: remote-ide-xpra
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: http
+  selector:
+    app: remote-ide-xpra
+
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: remote-ide-xpra-ingress
+  namespace: remote-ide-xpra
+  annotations:
+    # Xpra uses WebSocket - ensure your ingress controller supports it
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "remote-ide-xpra-service"
+    # Adjust for your ingress controller
+    kubernetes.io/ingress.class: "nginx"
+spec:
+  rules:
+  - host: xpra-ide.your-domain.com  # Change this to your domain
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: remote-ide-xpra-service
+            port:
+              number: 8080
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: remote-ide-xpra-hpa
+  namespace: remote-ide-xpra
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: remote-ide-xpra
+  minReplicas: 1
+  maxReplicas: 3
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 85
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: remote-ide-xpra-pdb
+  namespace: remote-ide-xpra
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: remote-ide-xpra
+

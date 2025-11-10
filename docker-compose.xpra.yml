@@ -1,0 +1,104 @@
+version: '3.8'
+
+services:
+  remote-ide-xpra:
+    build:
+      context: .
+      dockerfile: Dockerfile.xpra
+      args:
+        IDEA_VERSION: "2025.2.4"
+        USER: developer
+        UID: 1000
+        GID: 1000
+    
+    image: remote-ide-xpra:latest
+    container_name: remote-ide-xpra
+    hostname: remote-ide-xpra
+    
+    # Run as non-root user
+    user: "1000:1000"
+    
+    # Ports
+    ports:
+      - "8080:8080"  # Xpra HTML5 web interface
+    
+    # Volumes
+    volumes:
+      # Persistent workspace
+      - workspace-xpra:/home/developer/workspace
+      # tmpfs for performance (reduces IOPS)
+      # NOTE: We don't mount /tmp as tmpfs because it needs exec permission for IntelliJ
+      - type: tmpfs
+        target: /dev/shm
+        tmpfs:
+          size: 2G
+      # RAM disk for IDE caches (THE CRITICAL FIX for 10 IOPS storage)
+      # Using named volume instead of tmpfs to allow exec permission
+      - ide-cache:/tmp/ide-cache
+      - ide-cache-home:/home/developer/.cache
+      - ide-jetbrains:/home/developer/.local/share/JetBrains
+      # Xpra logs on tmpfs
+      - type: tmpfs
+        target: /home/developer/.xpra
+        tmpfs:
+          size: 512M
+    
+    # Environment variables
+    environment:
+      - DISPLAY=:100
+      - XPRA_PORT=8080
+      - XPRA_ENCODING=rgb
+      - XPRA_HTML=on
+      # Note: Java rendering options are now in /opt/idea/bin/idea64.vmoptions
+
+    # Security options
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  workspace-xpra:
+    driver: local
+  # RAM disk volumes for IDE caches (stored in memory for performance)
+  # These use tmpfs driver which stores data in RAM
+  ide-cache:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=4G,mode=1777
+  ide-cache-home:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=2G,mode=1777
+  ide-jetbrains:
+    driver: local
+    driver_opts:
+      type: tmpfs
+      device: tmpfs
+      o: size=1G,mode=1777
+
