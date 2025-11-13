@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+  developer-desktop:
+    build:
+      context: .
+      dockerfile: Dockerfile.simple  # SIMPLE VERSION - NO s6-overlay!
+    image: nanto2vison/desktopselkie:latest
+    container_name: developer-desktop
+
+    # Security settings matching Kubernetes constraints
+    user: "1000:1000"  # Pure rootless!
+    read_only: true    # Read-only root filesystem
+    cap_drop:
+      - ALL            # Drop all capabilities
+    security_opt:
+      - no-new-privileges:true
+    
+    # Environment variables
+    environment:
+      # Display
+      - DISPLAY=:1
+      - SIZEW=1920
+      - SIZEH=1080
+      - CDEPTH=24
+
+      # User configuration
+      - HOME=/home/coder
+      - XDG_RUNTIME_DIR=/tmp/runtime-coder
+      - XDG_DATA_DIRS=/usr/local/share:/usr/share
+      - XDG_CONFIG_HOME=/home/coder/.config
+
+      # Qt/Icon configuration
+      - QT_QPA_PLATFORMTHEME=qt5ct
+      - QT_STYLE_OVERRIDE=Breeze
+      - ICON_THEME=Papirus
+
+      # Locale
+      - LC_ALL=en_US.UTF-8
+      - LANG=en_US.UTF-8
+
+      # Dashboard
+      - DASHBOARD=selkies-dashboard
+
+      # Password (change this!)
+      - PASSWORD=ChangeMe123!
+
+      # Debug
+      - GST_DEBUG=3
+      - SELKIES_DEBUG=true
+    
+    # Ports
+    ports:
+      - "3000:3000"  # HTTP
+      - "3001:3001"  # HTTPS
+    
+    # Volumes - ONLY /home/coder and /tmp are writable!
+    volumes:
+      # Persistent user data
+      - developer-home:/home/coder
+
+      # Temporary files (includes XDG_RUNTIME_DIR, pulse, X11, etc.)
+      - developer-tmp:/tmp
+    
+    # Resource limits (matching Kubernetes)
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '3.8'
+          memory: 7.5G
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# Named volumes for persistent data
+volumes:
+  developer-home:
+    driver: local
+  developer-tmp:
+    driver: local
+
