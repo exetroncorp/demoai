@@ -1,0 +1,137 @@
+Yes! You can configure the JDK for Confluent images on Alpine. Here are several approaches:
+
+## Option 1: Use JVM Performance Flags (Easiest)
+
+Add these environment variables to reduce JVM startup time and memory usage:
+
+```bash
+docker run -d \
+  --name kafka-connect \
+  --network kafka-net \
+  -p 8083:8083 \
+  -e KAFKA_HEAP_OPTS="-Xms128M -Xmx256M" \
+  -e KAFKA_JVM_PERFORMANCE_OPTS="-XX:+UseSerialGC -XX:+TieredCompilation -XX:TieredStopAtLevel=1 -XX:InitialCodeCacheSize=32m -XX:ReservedCodeCacheSize=32m -Djava.security.egd=file:/dev/./urandom" \
+  -e CONNECT_BOOTSTRAP_SERVERS=kafka:9092 \
+  # ... other settings
+  confluentinc/cp-kafka-connect:latest
+```
+
+**What these flags do:**
+- `-XX:+UseSerialGC` - Simpler, faster GC for single-core/slow systems
+- `-XX:+TieredCompilation -XX:TieredStopAtLevel=1` - Stop at C1 compiler (faster startup, skip C2)
+- `-XX:InitialCodeCacheSize=32m` - Reduce code cache
+- `-Djava.security.egd=file:/dev/./urandom` - Faster random number generation
+
+## Option 2: Create Custom Dockerfile with Alpine JDK
+
+```dockerfile
+FROM alpine:3.19
+
+# Install Eclipse Temurin JDK (good Alpine support)
+RUN apk add --no-cache openjdk17-jre
+
+# Or install Amazon Corretto
+# RUN wget https://corretto.aws/downloads/latest/amazon-corretto-17-alpine-linux-x64.tar.gz && \
+#     tar -xzf amazon-corretto-17-alpine-linux-x64.tar.gz && \
+#     mv amazon-corretto-* /opt/java
+
+# Install Kafka Connect
+ENV KAFKA_VERSION=3.6.1
+ENV SCALA_VERSION=2.13
+
+RUN apk add --no-cache bash curl && \
+    curl -O https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz && \
+    tar -xzf kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz && \
+    mv kafka_${SCALA_VERSION}-${KAFKA_VERSION} /opt/kafka && \
+    rm kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz
+
+WORKDIR /opt/kafka
+
+# Configure JVM for low-resource environment
+ENV KAFKA_HEAP_OPTS="-Xms128M -Xmx256M"
+ENV KAFKA_JVM_PERFORMANCE_OPTS="-XX:+UseSerialGC -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+
+CMD ["/opt/kafka/bin/connect-distributed.sh", "/opt/kafka/config/connect-distributed.properties"]
+```
+
+## Option 3: Extend Official Image with Custom JVM Config
+
+```dockerfile
+FROM confluentinc/cp-kafka-connect:latest
+
+# Check what JDK is installed
+RUN java -version
+
+# Create custom JVM options file
+RUN mkdir -p /etc/kafka-connect
+RUN echo "-Xms128M" >> /etc/kafka-connect/jvm.options && \
+    echo "-Xmx256M" >> /etc/kafka-connect/jvm.options && \
+    echo "-XX:+UseSerialGC" >> /etc/kafka-connect/jvm.options && \
+    echo "-XX:+TieredCompilation" >> /etc/kafka-connect/jvm.options && \
+    echo "-XX:TieredStopAtLevel=1" >> /etc/kafka-connect/jvm.options && \
+    echo "-XX:InitialCodeCacheSize=32m" >> /etc/kafka-connect/jvm.options && \
+    echo "-XX:ReservedCodeCacheSize=32m" >> /etc/kafka-connect/jvm.options && \
+    echo "-Djava.security.egd=file:/dev/./urandom" >> /etc/kafka-connect/jvm.options
+
+# Set environment to use these options
+ENV KAFKA_OPTS="-Djava.security.egd=file:/dev/./urandom"
+ENV KAFKA_HEAP_OPTS="-Xms128M -Xmx256M"
+ENV KAFKA_JVM_PERFORMANCE_OPTS="-XX:+UseSerialGC -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+```
+
+Build and run:
+```bash
+docker build -t kafka-connect-alpine-optimized .
+docker run -d --name kafka-connect --network kafka-net kafka-connect-alpine-optimized
+```
+
+## Option 4: Use Minimal Kafka (No Confluent Platform)
+
+For Alpine, you might want to use pure Apache Kafka instead of Confluent:
+
+```dockerfile
+FROM alpine:3.19
+
+RUN apk add --no-cache openjdk17-jre bash
+
+ENV KAFKA_VERSION=3.6.1
+ENV SCALA_VERSION=2.13
+
+RUN wget https://archive.apache.org/dist/kafka/${KAFKA_VERSION}/kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz && \
+    tar -xzf kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz -C /opt && \
+    ln -s /opt/kafka_${SCALA_VERSION}-${KAFKA_VERSION} /opt/kafka && \
+    rm kafka_${SCALA_VERSION}-${KAFKA_VERSION}.tgz
+
+ENV PATH="/opt/kafka/bin:${PATH}"
+ENV KAFKA_HEAP_OPTS="-Xms128M -Xmx256M"
+
+WORKDIR /opt/kafka
+```
+
+## Option 5: Check Current JDK in Confluent Image
+
+To see what JDK the Confluent images use:
+
+```bash
+docker run --rm confluentinc/cp-kafka-connect:latest java -version
+docker run --rm confluentinc/cp-kafka-connect:latest which java
+docker run --rm confluentinc/cp-kafka-connect:latest ls -la /usr/lib/jvm/
+```
+
+## Recommended Approach for TCG Mode
+
+Use Option 1 (environment variables) with these optimized settings:
+
+```bash
+docker run -d \
+  --name kafka-connect \
+  --network kafka-net \
+  -p 8083:8083 \
+  -e KAFKA_HEAP_OPTS="-Xms96M -Xmx192M" \
+  -e KAFKA_JVM_PERFORMANCE_OPTS="-XX:+UseSerialGC -XX:MaxRAMPercentage=80.0 -XX:+TieredCompilation -XX:TieredStopAtLevel=1 -XX:-BackgroundCompilation -Djava.security.egd=file:/dev/./urandom -Djava.awt.headless=true" \
+  -e KAFKA_OPTS="-Dcom.sun.management.jmxremote=false" \
+  # ... rest of your config
+  confluentinc/cp-kafka-connect:latest
+```
+
+This should reduce your startup time from 10 minutes to maybe 5-7 minutes in TCG mode. The hardware emulation is still the main bottleneck though!
