@@ -1,0 +1,89 @@
+import argparse
+import requests
+import sys
+
+def download_file(url, filename):
+    """
+    Downloads a file from the Open VSX API.
+    """
+    try:
+        # Standard headers to look like a normal browser/client
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+
+        with requests.get(url, headers=headers, stream=True) as response:
+            if response.status_code == 404:
+                print(f"[Error 404] File not found.")
+                print(f"URL Attempted: {url}")
+                return False
+            
+            response.raise_for_status()
+            total_size = int(response.headers.get('content-length', 0))
+            
+            print(f"Downloading {filename}...")
+            print(f"Source: {url}")
+            
+            with open(filename, 'wb') as f:
+                if total_size == 0:
+                    f.write(response.content)
+                else:
+                    downloaded = 0
+                    for chunk in response.iter_content(chunk_size=8192):
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        # Simple percentage display
+                        percent = int((downloaded / total_size) * 100)
+                        sys.stdout.write(f"\rProgress: [{('=' * int(percent/5)).ljust(20)}] {percent}%")
+                        sys.stdout.flush()
+            print("\nDownload complete!")
+            return True
+
+    except Exception as e:
+        print(f"\n[Error] {e}")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(description="Download from Open VSX Registry (using API)")
+    parser.add_argument("id", help="Extension ID (e.g., ms-python.python)")
+    parser.add_argument("version", help="Version number (e.g., 2025.16.0)")
+    parser.add_argument("--target", "-t", default=None, help="Target Platform (e.g., win32-x64, linux-x64). Leave empty for Universal.")
+    
+    args = parser.parse_args()
+
+    if "." not in args.id:
+        print("Error: ID must be in format 'publisher.extension'")
+        return
+
+    namespace, extension = args.id.split(".", 1)
+    version = args.version
+    target = args.target
+
+    # 1. Construct the Filename
+    filename_base = f"{namespace}.{extension}-{version}"
+    
+    if target:
+        filename = f"{filename_base}@{target}.vsix"
+    else:
+        filename = f"{filename_base}.vsix"
+
+    # 2. Construct the Open VSX API URL (NOT direct blob storage)
+    api_base = "https://open-vsx.org/api"
+    
+    if target:
+        # Platform-specific: /api/{namespace}/{extension}/{target}/{version}/file/{filename}
+        download_url = f"{api_base}/{namespace}/{extension}/{target}/{version}/file/{filename}"
+    else:
+        # Universal: /api/{namespace}/{extension}/{version}/file/{filename}
+        download_url = f"{api_base}/{namespace}/{extension}/{version}/file/{filename}"
+
+    success = download_file(download_url, filename)
+
+    if not success:
+        print("\nTroubleshooting:")
+        print("1. Double-check the ID and Version for typos.")
+        print("2. Verify the version exists at https://open-vsx.org/extension/{}/{}".format(namespace, extension))
+        print("3. If the platform-specific download failed, try the Universal download (without the --target flag).")
+
+if __name__ == "__main__":
+    main()
