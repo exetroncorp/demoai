@@ -1,81 +1,60 @@
-server {
-    listen 127.0.0.1:6666;
-    server_name localhost;
+ mitmdump \
+  --mode reverse:https://open-vsx.org \
+  --listen-host 0.0.0.0 \
+  --listen-port 6666 \
+  --upstream-auth=toto:pass
 
-    location / {
-        # The URL of your mirror
-        proxy_pass https://artoifactory/openvsx/;
 
-        # Inject the Basic Auth Header
-        # Replace [YOUR_BASE64_STRING] with the output from step 1
-        proxy_set_header Authorization "Basic [YOUR_BASE64_STRING]";
+-----------------------
 
-        # Standard headers to ensure the upstream sees the correct info
-        proxy_set_header Host artoifactory;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+# Complete nginx config for open-vsx.org mirror
+# Save as: nginx.conf
+# Run with: nginx -c /path/to/nginx.conf
 
-        # Remove cookies if you want to rely purely on the header
-        proxy_set_header Cookie "";
-    }
+worker_processes 1;
+error_log /tmp/nginx_error.log;
+pid /tmp/nginx.pid;
+
+events {
+    worker_connections 1024;
 }
 
+http {
+    access_log /tmp/nginx_access.log;
+    client_body_temp_path /tmp/nginx_client_body;
+    proxy_temp_path /tmp/nginx_proxy;
+    fastcgi_temp_path /tmp/nginx_fastcgi;
+    uwsgi_temp_path /tmp/nginx_uwsgi;
+    scgi_temp_path /tmp/nginx_scgi;
 
-echo -n 'your_username:your_password' | base64
+    server {
+        listen 6666;
+        server_name localhost;
 
-import base64
-from proxy import Proxy
-from proxy.http.proxy import HttpProxyBasePlugin
-from proxy.http.parser import HttpParser
-
-# CONFIGURATION
-TARGET_HOST = b'artoifactory'
-TARGET_PORT = 443
-TARGET_SCHEME = b'https'
-USERNAME = 'your_username'
-PASSWORD = 'your_password'
-
-class InjectAuthPlugin(HttpProxyBasePlugin):
-    def before_upstream_connection(self, request: HttpParser) -> HttpParser:
-        # 1. Force the request to go to your specific mirror host
-        # This turns the proxy into a reverse proxy for this specific target
-        request.url.hostname = TARGET_HOST
-        request.url.port = TARGET_PORT
-        request.url.scheme = TARGET_SCHEME
-
-        # 2. Create the Basic Auth Header
-        creds = f'{USERNAME}:{PASSWORD}'.encode('utf-8')
-        b64_creds = base64.b64encode(creds)
-
-        # 3. Inject the header
-        # Using b'Authorization' key and b'Basic ...' value
-        request.add_header(b'Authorization', b'Basic ' + b64_creds)
-
-        # 4. Update the Host header to match the target
-        request.add_header(b'Host', TARGET_HOST)
-
-        return request
-
-    def handle_client_request(self, request: HttpParser) -> HttpParser:
-        return request
-
-    def handle_upstream_chunk(self, chunk: memoryview) -> memoryview:
-        return chunk
-
-    def on_upstream_connection_close(self) -> None:
-        pass
-
-if __name__ == '__main__':
-    # Run the proxy on port 6666 with the plugin enabled
-    # We enable the reverse proxy mode conceptually by rewriting the URL in the plugin
-    with Proxy([
-        '--hostname', '127.0.0.1',
-        '--port', '6666',
-        '--plugins', 'auth_proxy.InjectAuthPlugin',
-        # If your factory uses self-signed certs, you might need to handle SSL validation 
-        # carefully, but standard https should work fine.
-    ]) as p:
-        print(f"Proxying http://127.0.0.1:6666 -> {TARGET_SCHEME.decode()}://{TARGET_HOST.decode()}")
-        p.idle_loop()
-
-
+        # Proxy all requests to open-vsx.org (or your Artifactory mirror)
+        location / {
+            proxy_pass https://open-vsx.org;
+            proxy_ssl_server_name on;
+            proxy_ssl_verify off;
+            
+            # Basic Auth for upstream server
+            # Change these for your Artifactory mirror echo -n "username:password" | base64
+            proxy_set_header Authorization "Basic dG90bzpwYXNz";  # base64(toto:pass)
+            
+            # Forward headers
+            proxy_set_header Host open-vsx.org;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            
+            # Handle redirects
+            proxy_redirect https://open-vsx.org/ http://$host:6666/;
+            proxy_redirect http://open-vsx.org/ http://$host:6666/;
+            
+            # Timeouts
+            proxy_connect_timeout 60s;
+            proxy_send_timeout 60s;
+            proxy_read_timeout 60s;
+        }
+    }
+}
