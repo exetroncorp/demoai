@@ -1,4 +1,14 @@
- mitmdump \
+
+  "extensionsGallery": {
+
+		"serviceUrl": "http://127.0.0.1:6666/vscode/gallery",
+		"itemUrl": "http://127.0.0.1:6666/vscode/item",
+		"resourceUrlTemplate": "http://127.0.0.1:6666/vscode/asset/{publisher}/{name}/{version}/Microsoft.VisualStudio.Code.WebResources/{path}",
+		"extensionUrlTemplate": "http://127.0.0.1:6666/vscode/gallery/{publisher}/{name}/latest"
+	
+	},
+-------------------
+mitmdump \
   --mode reverse:https://open-vsx.org \
   --listen-host 0.0.0.0 \
   --listen-port 6666 \
