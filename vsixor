@@ -1,3 +1,6 @@
+pip3 install textual httpx rich --break-system-packages
+
+
 #!/usr/bin/env python3
 import asyncio
 import httpx
