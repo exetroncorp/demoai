@@ -1,0 +1,291 @@
+#!/usr/bin/env python3
+import asyncio
+import httpx
+import subprocess
+import math
+from textual import on, work
+from textual.app import App, ComposeResult
+from textual.containers import Vertical, Horizontal, Container
+from textual.widgets import (
+    Input, ListItem, Label, Button, Footer, Header, 
+    Static, LoadingIndicator, OptionList
+)
+from textual.message import Message
+
+API_SEARCH = "https://open-vsx.org/api/-/search"
+
+# --- Helper to format numbers (e.g. 1500 -> 1.5k) ---
+def format_count(count):
+    if count is None: return "0"
+    n = int(count)
+    if n == 0: return "0"
+    size_name = ("", "K", "M", "B")
+    i = int(math.floor(math.log(n, 1000)))
+    p = math.pow(1000, i)
+    s = round(n / p, 1)
+    return f"{s}{size_name[i]}" if i < len(size_name) else f"{n}"
+
+# --- Custom Widget for a single Extension Row ---
+class ExtensionRow(Container):
+    class InstallRequest(Message):
+        """Message sent when the install button is pressed."""
+        def __init__(self, ext_data: dict, widget: "ExtensionRow"):
+            self.ext_data = ext_data
+            self.widget = widget
+            super().__init__()
+
+    def __init__(self, data: dict, **kwargs):
+        super().__init__(**kwargs)
+        self.data = data
+        self.ext_namespace = data.get('namespace', 'unknown')
+        self.ext_name = data.get('name', 'unknown')
+        self.ext_desc = data.get('description', '') or "No description provided."
+        self.ext_downloads = format_count(data.get('downloadCount', 0))
+        self.ext_ver = data.get('version', '')
+
+    def compose(self) -> ComposeResult:
+        # 1. Logo Placeholder (Colored box with icon)
+        yield Static("🧩", classes="ext-logo")
+
+        # 2. Metadata Column
+        with Vertical(classes="ext-meta"):
+            # Title: Name (Version)
+            yield Label(f"[b]{self.ext_name}[/b] [dim]{self.ext_ver}[/]", classes="ext-title")
+            
+            # Subtitle: Publisher • Downloads
+            with Horizontal(classes="ext-subtitle"):
+                yield Label(f"[blue]@{self.ext_namespace}[/]", classes="ext-publisher")
+                yield Label(f"⬇ {self.ext_downloads}", classes="ext-downloads")
+            
+            # Description
+            yield Label(self.ext_desc[:90] + ("..." if len(self.ext_desc) > 90 else ""), classes="ext-desc")
+
+        # 3. Action Column (Button or Loader)
+        with Container(classes="ext-actions", id="action_container"):
+            yield Button("Install", variant="primary", classes="install-btn")
+
+    @on(Button.Pressed, ".install-btn")
+    def on_install_click(self):
+        # Dispatch message to parent App to handle logic
+        self.post_message(self.InstallRequest(self.data, self))
+
+    def set_loading(self, is_loading: bool):
+        """Swap the button for a loader."""
+        container = self.query_one("#action_container")
+        container.remove_children()
+        if is_loading:
+            container.mount(LoadingIndicator())
+            self.add_class("installing")
+        else:
+            container.mount(Button("Installed", variant="success", disabled=True))
+            self.remove_class("installing")
+
+
+class VSXManager(App):
+    CSS = """
+    Screen {
+        layout: grid;
+        grid-size: 2 2;
+        grid-columns: 25 1fr;
+        grid-rows: auto 1fr;
+    }
+
+    #sidebar {
+        row-span: 2;
+        background: $panel;
+        border-right: vkey $background;
+        padding: 1;
+    }
+    
+    #sidebar Label {
+        padding-bottom: 1;
+        text-style: bold;
+        color: $accent;
+    }
+
+    #search_container {
+        padding: 1;
+        height: auto;
+    }
+
+    #search_input {
+        border: tall $accent;
+    }
+
+    #results_container {
+        padding: 0 1;
+        overflow-y: scroll;
+    }
+    
+    ExtensionRow {
+        layout: horizontal;
+        height: 6;
+        margin-bottom: 1;
+        background: $surface;
+        padding: 1;
+        border: solid $primary-background;
+    }
+    ExtensionRow:hover {
+        background: $surface-lighten-1;
+    }
+
+    .ext-logo {
+        width: 5;
+        height: 3;
+        background: $primary;
+        color: white;
+        content-align: center middle;
+        margin-right: 1;
+        text-style: bold;
+    }
+
+    .ext-meta {
+        width: 1fr;
+    }
+
+    .ext-title {
+        color: $text;
+    }
+
+    .ext-subtitle {
+        height: 1;
+        margin-top: 0;
+    }
+    
+    .ext-publisher {
+        margin-right: 2;
+    }
+    
+    .ext-downloads {
+        color: $warning;
+    }
+
+    .ext-desc {
+        color: $text-muted;
+        margin-top: 1;
+    }
+
+    .ext-actions {
+        width: 14;
+        content-align: right middle;
+    }
+    
+    LoadingIndicator {
+        height: 1;
+        color: $accent;
+    }
+    """
+
+    CATEGORIES = [
+        "All", "Programming Languages", "Themes", "Snippets", 
+        "Linters", "Formatters", "Debuggers", "Education"
+    ]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="sidebar"):
+            yield Label("CATEGORIES")
+            yield OptionList(*self.CATEGORIES, id="category_list")
+
+        with Container(id="search_container"):
+            yield Input(placeholder="Search extensions...", id="search_input")
+
+        with Vertical(id="results_container"):
+            yield LoadingIndicator(id="main_loader", classes="hidden")
+            yield Container(id="extension_list_display") 
+
+        yield Footer()
+
+    def on_mount(self):
+        self.query_one("#search_input").focus()
+        self.query_one("#category_list").highlighted = 0
+        self.query_one("#main_loader").display = False
+
+    async def perform_search(self, query: str = "", category: str = "All"):
+        results_display = self.query_one("#extension_list_display")
+        loader = self.query_one("#main_loader")
+        
+        results_display.remove_children()
+        loader.display = True
+        
+        final_query = query
+        if category and category != "All":
+            final_query = f'{query} category:"{category}"'.strip()
+
+        if not final_query:
+            final_query = ""
+
+        try:
+            async with httpx.AsyncClient(follow_redirects=True) as client:
+                params = {"query": final_query, "size": 20}
+                resp = await client.get(API_SEARCH, params=params, timeout=10)
+                resp.raise_for_status()
+                data = resp.json()
+                
+                extensions = data.get("extensions", [])
+                
+                loader.display = False
+                
+                if not extensions:
+                    results_display.mount(Label(f"No results found for '{final_query}'"))
+                    return
+
+                for i, ext in enumerate(extensions):
+                    ext_id_name = f"ext-{ext.get('namespace', 'unknown')}-{ext.get('name', 'unknown')}-{i}"
+                    results_display.mount(ExtensionRow(ext, id=ext_id_name))
+
+        except Exception as e:
+            loader.display = False
+            results_display.mount(Label(f"[red]Error: {e}"))
+
+    async def on_input_submitted(self, event: Input.Submitted):
+        cat_list = self.query_one("#category_list")
+        selected_idx = cat_list.highlighted
+        category = self.CATEGORIES[selected_idx] if selected_idx is not None else "All"
+        
+        await self.perform_search(event.value, category)
+
+    async def on_option_list_option_selected(self, event: OptionList.OptionSelected):
+        query = self.query_one("#search_input").value
+        category = str(event.option.prompt)
+        await self.perform_search(query, category)
+
+    @work(exclusive=True)
+    async def on_extension_row_install_request(self, message: ExtensionRow.InstallRequest):
+        widget = message.widget
+        ext_id = f"{message.ext_data['namespace']}.{message.ext_data['name']}"
+        
+        # Update UI to Loading
+        widget.set_loading(True)
+        
+        # Use code-server instead of code
+        cmd = ["code-server", "--install-extension", ext_id]
+        
+        try:
+            process = await asyncio.create_subprocess_exec(
+                *cmd, 
+                stdout=asyncio.subprocess.PIPE, 
+                stderr=asyncio.subprocess.PIPE
+            )
+            stdout, stderr = await process.communicate()
+
+            if process.returncode == 0:
+                self.notify(f"Installed {ext_id}", title="Success", severity="information")
+                widget.set_loading(False)
+            else:
+                error_msg = stderr.decode().strip() or "Installation failed."
+                self.notify(f"Failed: {error_msg}", title="Error", severity="error")
+                # Revert to Install button
+                container = widget.query_one("#action_container")
+                container.remove_children()
+                container.mount(Button("Install", variant="primary", classes="install-btn"))
+                
+        except Exception as e:
+            self.notify(f"Error: {e}", severity="error")
+            # Revert to Install button
+            container = widget.query_one("#action_container")
+            container.remove_children()
+            container.mount(Button("Install", variant="primary", classes="install-btn"))
+
+
+if __name__ == "__main__":
+    VSXManager().run()
