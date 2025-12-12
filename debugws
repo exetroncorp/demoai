@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+
+URL="${1:-wss://mypod/user/me/}"
+
+echo "==== XPRA / WEBSOCAT DEBUG SCRIPT ===="
+echo "Testing endpoint: $URL"
+echo ""
+
+# Extract host and port from URL
+host=$(echo "$URL" | sed -E 's~wss?://([^/:]+).*~\1~')
+port=$(echo "$URL" | sed -E 's~wss?://[^/:]+:([0-9]+).*~\1~')
+
+# If no port found → default 443
+if [[ "$port" == "$URL" || -z "$port" ]]; then
+    port=443
+fi
+
+echo "Host     : $host"
+echo "Port     : $port"
+echo ""
+
+step() {
+    name="$1"
+    shift
+    echo "== $name =="
+    if "$@" 2>&1; then
+        echo "[OK] $name"
+    else
+        echo "[ERROR] $name"
+    fi
+    echo ""
+}
+
+# 1) TLS handshake test
+step "TLS handshake (ssl://)" \
+    timeout 5 websocat "ssl://$host:$port"
+
+# 2) WebSocket handshake (verbose)
+step "WebSocket handshake (-vv)" \
+    timeout 5 websocat -vv "$URL"
+
+# 3) WebSocket ping frame (0x89 0x00)
+step "Send WebSocket PING" \
+    sh -c 'printf "\211\000" | timeout 5 websocat -b - "'"$URL"'"'
+
+# 4) HTTP GET test against WS endpoint
+step "HTTP GET test (-E)" \
+    timeout 5 websocat -E "$URL"
+
+# 5) Raw TCP test to check reachability
+step "TCP connectivity test (tcp:)" \
+    timeout 5 websocat "tcp:$host:$port"
+
+# 6) WS with custom Origin header (bypass some proxies)
+step "WS with Origin header" \
+    timeout 5 websocat "$URL" -H="Origin: xpra-test"
+
+# 7) Read first XPRA bytes (binary sniff)
+step "Read initial XPRA bytes" \
+    timeout 5 websocat "$URL" --binary -t??
+
+echo "==== DONE ===="
+echo "Check the [ERROR] lines above to identify where the connection fails."
