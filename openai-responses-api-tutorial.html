@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenAI Responses API — curl Tutorial</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #1a1a26;
+    --border: #2a2a3d;
+    --accent: #7c6af7;
+    --accent2: #4af0c4;
+    --accent3: #f0a24a;
+    --text: #e8e8f0;
+    --muted: #8888a8;
+    --green: #4af0c4;
+    --orange: #f0a24a;
+    --pink: #f06aaa;
+    --blue: #6ab4f0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    padding: 80px 60px 60px;
+    border-bottom: 1px solid var(--border);
+    overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse 80% 60% at 60% 20%, rgba(124,106,247,0.12) 0%, transparent 70%),
+                radial-gradient(ellipse 50% 40% at 20% 80%, rgba(74,240,196,0.07) 0%, transparent 60%);
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(124,106,247,0.15);
+    border: 1px solid rgba(124,106,247,0.4);
+    border-radius: 100px;
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 24px;
+  }
+  .hero-badge::before { content: '●'; font-size: 8px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+  .hero h1 {
+    font-size: clamp(36px, 5vw, 64px);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -1px;
+    max-width: 700px;
+    position: relative;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero p {
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 17px;
+    max-width: 560px;
+    position: relative;
+  }
+  .hero-meta {
+    display: flex;
+    gap: 24px;
+    margin-top: 32px;
+    flex-wrap: wrap;
+    position: relative;
+  }
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .tag b { color: var(--text); }
+
+  /* ── LAYOUT ── */
+  .layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    min-height: calc(100vh - 220px);
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    border-right: 1px solid var(--border);
+    padding: 32px 20px;
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+  }
+  .sidebar-title {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 16px;
+    padding-left: 12px;
+  }
+  .nav-item {
+    display: block;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: var(--muted);
+    text-decoration: none;
+    transition: all 0.15s;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+    margin-bottom: 2px;
+  }
+  .nav-item:hover { color: var(--text); background: var(--surface2); }
+  .nav-item.active { color: var(--accent); border-left-color: var(--accent); background: rgba(124,106,247,0.08); }
+  .nav-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    margin-right: 6px;
+  }
+
+  /* ── CONTENT ── */
+  .content {
+    padding: 48px 60px;
+    max-width: 900px;
+  }
+
+  .section {
+    margin-bottom: 72px;
+    scroll-margin-top: 40px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+    font-weight: 600;
+  }
+  .section-title {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .section-title span { color: var(--accent2); }
+
+  p { color: #c0c0d8; font-size: 15px; margin-bottom: 16px; line-height: 1.75; }
+  strong { color: var(--text); }
+
+  /* ── CODE BLOCKS ── */
+  .code-block {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin: 20px 0;
+    overflow: hidden;
+  }
+  .code-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--surface2);
+    border-bottom: 1px solid var(--border);
+  }
+  .code-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .code-label.bash { color: var(--accent2); }
+  .code-label.json { color: var(--orange); }
+  .code-label.response { color: var(--pink); }
+  .copy-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { color: var(--text); border-color: var(--accent); }
+  .copy-btn.copied { color: var(--accent2); border-color: var(--accent2); }
+
+  pre {
+    padding: 20px 24px;
+    overflow-x: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  /* syntax highlight */
+  .k  { color: #c792ea; }  /* keyword / flag */
+  .s  { color: #c3e88d; }  /* string */
+  .n  { color: var(--blue); }  /* key name */
+  .v  { color: var(--orange); }  /* value / number */
+  .c  { color: #546e7a; font-style: italic; }  /* comment */
+  .u  { color: var(--accent2); }  /* url */
+  .cmd { color: var(--pink); }    /* curl command */
+  .role { color: #f7c94a; }  /* role value */
+
+  /* ── CALLOUT ── */
+  .callout {
+    display: flex;
+    gap: 14px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 10px;
+    padding: 16px 20px;
+    margin: 20px 0;
+  }
+  .callout.tip { border-left-color: var(--accent2); }
+  .callout.warn { border-left-color: var(--orange); }
+  .callout-icon { font-size: 18px; flex-shrink: 0; margin-top: 2px; }
+  .callout p { margin: 0; font-size: 14px; }
+  .callout-label { font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+  .callout.tip .callout-label { color: var(--accent2); }
+  .callout.warn .callout-label { color: var(--orange); }
+
+  /* ── FIELD TABLE ── */
+  .field-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    font-size: 14px;
+  }
+  .field-table th {
+    text-align: left;
+    padding: 10px 16px;
+    background: var(--surface2);
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--border);
+  }
+  .field-table td {
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(42,42,61,0.6);
+    vertical-align: top;
+    color: #c0c0d8;
+  }
+  .field-table tr:last-child td { border-bottom: none; }
+  .field-table tr:hover td { background: rgba(255,255,255,0.02); }
+  .pill {
+    display: inline-block;
+    background: rgba(124,106,247,0.15);
+    border: 1px solid rgba(124,106,247,0.3);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .pill.req {
+    background: rgba(240,101,170,0.1);
+    border-color: rgba(240,101,170,0.3);
+    color: var(--pink);
+  }
+  .pill.opt {
+    background: rgba(74,240,196,0.08);
+    border-color: rgba(74,240,196,0.25);
+    color: var(--accent2);
+  }
+
+  /* ── RESPONSE ANATOMY ── */
+  .anatomy {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin: 20px 0;
+  }
+  .anatomy-row {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    border-bottom: 1px solid var(--border);
+  }
+  .anatomy-row:last-child { border-bottom: none; }
+  .anatomy-key {
+    padding: 14px 16px;
+    background: var(--surface2);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: var(--accent2);
+    display: flex;
+    align-items: flex-start;
+    border-right: 1px solid var(--border);
+  }
+  .anatomy-val {
+    padding: 14px 16px;
+    font-size: 14px;
+    color: #c0c0d8;
+  }
+  .anatomy-val small { display: block; font-size: 12px; color: var(--muted); margin-top: 4px; font-family: 'JetBrains Mono', monospace; }
+
+  /* ── COMPARISON ── */
+  .compare {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .compare-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .compare-card h4 {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  .dot.old { background: var(--pink); }
+  .dot.new { background: var(--accent2); }
+
+  /* ── FOOTER ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 32px 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  footer a { color: var(--accent); text-decoration: none; }
+
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: none; }
+    .content { padding: 32px 24px; }
+    .hero { padding: 48px 24px; }
+    .compare { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="hero-badge">New API · 2025</div>
+  <h1>OpenAI <span>Responses API</span><br>curl Tutorial</h1>
+  <p>A complete hands-on guide to the new Responses API — body structure, roles, JSON anatomy, streaming, tools, and more.</p>
+  <div class="hero-meta">
+    <span class="tag">🔑 Requires <b>API Key</b></span>
+    <span class="tag">📡 Endpoint <b>v1/responses</b></span>
+    <span class="tag">⚡ Replaces <b>Chat Completions</b></span>
+    <span class="tag">🛠 Tools <b>built-in</b></span>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="sidebar-title">Sections</div>
+    <a class="nav-item active" href="#s0"><span class="nav-num">00</span> Hello World</a>
+    <a class="nav-item" href="#s1"><span class="nav-num">01</span> Request Body</a>
+    <a class="nav-item" href="#s2"><span class="nav-num">02</span> Roles</a>
+    <a class="nav-item" href="#s3"><span class="nav-num">03</span> Response JSON</a>
+    <a class="nav-item" href="#s4"><span class="nav-num">04</span> System Prompt</a>
+    <a class="nav-item" href="#s5"><span class="nav-num">05</span> Multi-turn</a>
+    <a class="nav-item" href="#s6"><span class="nav-num">06</span> Streaming</a>
+    <a class="nav-item" href="#s7"><span class="nav-num">07</span> Built-in Tools</a>
+    <a class="nav-item" href="#s8"><span class="nav-num">08</span> vs Chat API</a>
+  </nav>
+
+  <!-- MAIN CONTENT -->
+  <main class="content">
+
+    <!-- 00 HELLO WORLD -->
+    <section class="section" id="s0">
+      <div class="section-header">
+        <span class="section-num">00</span>
+        <h2 class="section-title">Hello <span>World</span></h2>
+      </div>
+
+      <p>The simplest possible call to the Responses API. Replace <code>$OPENAI_API_KEY</code> with your key or export it as an environment variable.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · minimal hello world</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "input": "Hello! What is the Responses API?"
+  }'</span></pre>
+      </div>
+
+      <div class="callout tip">
+        <span class="callout-icon">💡</span>
+        <div>
+          <div class="callout-label">Tip</div>
+          <p>The key difference from Chat Completions: instead of a <code>messages</code> array, you pass a single <code>input</code> string (or array). The API is stateful by default — responses are stored server-side and can be continued.</p>
+        </div>
+      </div>
+
+      <p>You'll get back a JSON object with your answer inside <code>output[0].content[0].text</code>. Let's break down every part of the request and response next.</p>
+    </section>
+
+    <!-- 01 REQUEST BODY -->
+    <section class="section" id="s1">
+      <div class="section-header">
+        <span class="section-num">01</span>
+        <h2 class="section-title">Request <span>Body</span> Anatomy</h2>
+      </div>
+
+      <p>Here's a full-featured request showing all the important fields:</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · full request body</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model":       "gpt-4o",
+    "input":       "Explain quantum entanglement simply.",
+    "instructions":"You are a physics teacher for curious 10-year-olds.",
+    "temperature": 0.7,
+    "max_output_tokens": 300,
+    "store":       true
+  }'</span></pre>
+      </div>
+
+      <p><strong>Field reference:</strong></p>
+
+      <table class="field-table">
+        <thead>
+          <tr>
+            <th>Field</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pill">model</span></td>
+            <td>string</td>
+            <td><span class="pill req">required</span></td>
+            <td>Model ID, e.g. <code>gpt-4o</code>, <code>gpt-4o-mini</code>, <code>o1</code></td>
+          </tr>
+          <tr>
+            <td><span class="pill">input</span></td>
+            <td>string | array</td>
+            <td><span class="pill req">required</span></td>
+            <td>Single string OR array of message objects with role/content</td>
+          </tr>
+          <tr>
+            <td><span class="pill">instructions</span></td>
+            <td>string</td>
+            <td><span class="pill opt">optional</span></td>
+            <td>System-level instructions (replaces the old <code>system</code> role message)</td>
+          </tr>
+          <tr>
+            <td><span class="pill">temperature</span></td>
+            <td>float</td>
+            <td><span class="pill opt">optional</span></td>
+            <td>Randomness 0–2. Default: 1. Lower = more deterministic</td>
+          </tr>
+          <tr>
+            <td><span class="pill">max_output_tokens</span></td>
+            <td>int</td>
+            <td><span class="pill opt">optional</span></td>
+            <td>Maximum tokens in the response</td>
+          </tr>
+          <tr>
+            <td><span class="pill">store</span></td>
+            <td>bool</td>
+            <td><span class="pill opt">optional</span></td>
+            <td>Whether to store the response server-side. Default: <code>true</code></td>
+          </tr>
+          <tr>
+            <td><span class="pill">previous_response_id</span></td>
+            <td>string</td>
+            <td><span class="pill opt">optional</span></td>
+            <td>ID of a previous response to continue a conversation</td>
+          </tr>
+          <tr>
+            <td><span class="pill">tools</span></td>
+            <td>array</td>
+            <td><span class="pill opt">optional</span></td>
+            <td>Built-in tools like <code>web_search</code>, <code>file_search</code>, <code>code_interpreter</code></td>
+          </tr>
+          <tr>
+            <td><span class="pill">stream</span></td>
+            <td>bool</td>
+            <td><span class="pill opt">optional</span></td>
+            <td>Enable server-sent events streaming</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 02 ROLES -->
+    <section class="section" id="s2">
+      <div class="section-header">
+        <span class="section-num">02</span>
+        <h2 class="section-title">Roles & <span>Input Types</span></h2>
+      </div>
+
+      <p>When <code>input</code> is an array, each item is a message object with a <strong>role</strong>. The Responses API supports three roles:</p>
+
+      <table class="field-table">
+        <thead>
+          <tr><th>Role</th><th>Who</th><th>Purpose</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="pill">user</span></td>
+            <td>End user / human</td>
+            <td>What the human says or asks</td>
+          </tr>
+          <tr>
+            <td><span class="pill">assistant</span></td>
+            <td>The model</td>
+            <td>Previous AI responses (for context)</td>
+          </tr>
+          <tr>
+            <td><span class="pill">system</span></td>
+            <td>Developer</td>
+            <td>Behaviour instructions (prefer <code>instructions</code> field)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · input as array with roles</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "input": [
+      {
+        "role": "</span><span class="role">user</span><span class="s">",
+        "content": "What is 15 multiplied by 37?"
+      }
+    ]
+  }'</span></pre>
+      </div>
+
+      <p>The <code>content</code> field inside a message can itself be a string or an array of typed content parts (text, image_url, etc.):</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · multimodal content parts</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "input": [
+      {
+        "role": "</span><span class="role">user</span><span class="s">",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "What is in this image?"
+          },
+          {
+            "type": "input_image",
+            "image_url": "https://example.com/photo.jpg"
+          }
+        ]
+      }
+    ]
+  }'</span></pre>
+      </div>
+    </section>
+
+    <!-- 03 RESPONSE JSON -->
+    <section class="section" id="s3">
+      <div class="section-header">
+        <span class="section-num">03</span>
+        <h2 class="section-title">Response <span>JSON</span></h2>
+      </div>
+
+      <p>A typical response looks like this:</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label response">json · response object</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre>{
+  <span class="n">"id"</span>: <span class="s">"resp_abc123xyz"</span>,
+  <span class="n">"object"</span>: <span class="s">"response"</span>,
+  <span class="n">"created_at"</span>: <span class="v">1714000000</span>,
+  <span class="n">"model"</span>: <span class="s">"gpt-4o-2024-11-20"</span>,
+  <span class="n">"status"</span>: <span class="s">"completed"</span>,
+  <span class="n">"output"</span>: [
+    {
+      <span class="n">"type"</span>: <span class="s">"message"</span>,
+      <span class="n">"role"</span>: <span class="s">"assistant"</span>,
+      <span class="n">"content"</span>: [
+        {
+          <span class="n">"type"</span>: <span class="s">"output_text"</span>,
+          <span class="n">"text"</span>: <span class="s">"Hello! The Responses API is OpenAI's..."</span>
+        }
+      ],
+      <span class="n">"id"</span>: <span class="s">"msg_def456"</span>,
+      <span class="n">"status"</span>: <span class="s">"completed"</span>
+    }
+  ],
+  <span class="n">"usage"</span>: {
+    <span class="n">"input_tokens"</span>: <span class="v">12</span>,
+    <span class="n">"output_tokens"</span>: <span class="v">94</span>,
+    <span class="n">"total_tokens"</span>: <span class="v">106</span>
+  },
+  <span class="n">"incomplete_details"</span>: <span class="v">null</span>,
+  <span class="n">"error"</span>: <span class="v">null</span>
+}</pre>
+      </div>
+
+      <p><strong>Key fields explained:</strong></p>
+      <div class="anatomy">
+        <div class="anatomy-row">
+          <div class="anatomy-key">id</div>
+          <div class="anatomy-val">Unique response ID. <strong>Save this</strong> to continue the conversation with <code>previous_response_id</code>.<small>e.g. "resp_abc123xyz"</small></div>
+        </div>
+        <div class="anatomy-row">
+          <div class="anatomy-key">status</div>
+          <div class="anatomy-val">Lifecycle state of the response.<small>"completed" | "in_progress" | "failed" | "incomplete"</small></div>
+        </div>
+        <div class="anatomy-row">
+          <div class="anatomy-key">output</div>
+          <div class="anatomy-val">Array of output items (messages, tool calls, tool results…). The AI text lives at <code>output[0].content[0].text</code>.<small>type: "message" | "function_call" | "web_search_call" …</small></div>
+        </div>
+        <div class="anatomy-row">
+          <div class="anatomy-key">usage</div>
+          <div class="anatomy-val">Token counts for billing and context management.<small>input_tokens + output_tokens = total_tokens</small></div>
+        </div>
+        <div class="anatomy-row">
+          <div class="anatomy-key">error</div>
+          <div class="anatomy-val">Null on success. Contains <code>code</code> + <code>message</code> on failure.<small>null | { code, message }</small></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 04 SYSTEM PROMPT -->
+    <section class="section" id="s4">
+      <div class="section-header">
+        <span class="section-num">04</span>
+        <h2 class="section-title">System Prompt / <span>Instructions</span></h2>
+      </div>
+
+      <p>In the Responses API, the recommended way to set system-level behaviour is the top-level <code>instructions</code> field — cleaner than injecting a <code>system</code> role message.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · instructions field</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model":        "gpt-4o",
+    "instructions": "You are a sarcastic but helpful pirate assistant. Always end with Arrr!",
+    "input":        "What is the capital of France?"
+  }'</span></pre>
+      </div>
+
+      <div class="callout warn">
+        <span class="callout-icon">⚠️</span>
+        <div>
+          <div class="callout-label">Note</div>
+          <p><strong>instructions</strong> apply to <em>every turn</em> in a stateful session. If you use <code>previous_response_id</code> to continue, the <code>instructions</code> from the latest call take effect.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- 05 MULTI-TURN -->
+    <section class="section" id="s5">
+      <div class="section-header">
+        <span class="section-num">05</span>
+        <h2 class="section-title">Multi-turn <span>Conversations</span></h2>
+      </div>
+
+      <p>The Responses API stores history server-side. You don't need to replay the whole conversation — just pass <code>previous_response_id</code>.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · turn 1: ask a question</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="c"># TURN 1 — start the conversation</span>
+<span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "input": "My name is Robert and I love Docker.",
+    "store": true
+  }'</span>
+
+<span class="c"># ↑ Response will contain: { "id": "resp_TURN1ID", ... }</span></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · turn 2: continue with previous_response_id</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="c"># TURN 2 — reference the previous response</span>
+<span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "previous_response_id": "resp_TURN1ID",
+    "input": "What is my name and what do I love?"
+  }'</span>
+
+<span class="c"># Model knows: "Your name is Robert and you love Docker!"</span></pre>
+      </div>
+    </section>
+
+    <!-- 06 STREAMING -->
+    <section class="section" id="s6">
+      <div class="section-header">
+        <span class="section-num">06</span>
+        <h2 class="section-title">Streaming <span>SSE</span></h2>
+      </div>
+
+      <p>Add <code>"stream": true</code> to receive server-sent events as the model generates tokens. The curl flag <code>--no-buffer</code> ensures output is printed in real-time.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · streaming response</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">--no-buffer</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model":  "gpt-4o",
+    "input":  "Write a short poem about containers.",
+    "stream": true
+  }'</span></pre>
+      </div>
+
+      <p>You'll see a stream of events like this in your terminal:</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label response">sse · stream output</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="n">event:</span> <span class="s">response.created</span>
+<span class="n">data:</span> <span class="s">{"type":"response.created","response":{"id":"resp_xyz","status":"in_progress",...}}</span>
+
+<span class="n">event:</span> <span class="s">response.output_item.added</span>
+<span class="n">data:</span> <span class="s">{"type":"response.output_item.added","output_index":0,"item":{...}}</span>
+
+<span class="n">event:</span> <span class="s">response.output_text.delta</span>
+<span class="n">data:</span> <span class="s">{"type":"response.output_text.delta","delta":"In "}</span>
+
+<span class="n">event:</span> <span class="s">response.output_text.delta</span>
+<span class="n">data:</span> <span class="s">{"type":"response.output_text.delta","delta":"containers "}</span>
+
+<span class="n">event:</span> <span class="s">response.output_text.done</span>
+<span class="n">data:</span> <span class="s">{"type":"response.output_text.done","text":"In containers cold and..."}</span>
+
+<span class="n">event:</span> <span class="s">response.completed</span>
+<span class="n">data:</span> <span class="s">{"type":"response.completed","response":{"status":"completed","usage":{...}}}</span></pre>
+      </div>
+    </section>
+
+    <!-- 07 BUILT-IN TOOLS -->
+    <section class="section" id="s7">
+      <div class="section-header">
+        <span class="section-num">07</span>
+        <h2 class="section-title">Built-in <span>Tools</span></h2>
+      </div>
+
+      <p>Unlike Chat Completions, the Responses API ships with <strong>hosted tools</strong> you can enable with a single line — no function definitions required.</p>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · web search tool</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "tools": [{ "type": "web_search_preview" }],
+    "input": "What are the latest Docker release notes in 2025?"
+  }'</span></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · code interpreter tool</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "tools": [{ "type": "code_interpreter", "container": { "type": "auto" } }],
+    "input": "Calculate the first 10 Fibonacci numbers and plot them."
+  }'</span></pre>
+      </div>
+
+      <div class="code-block">
+        <div class="code-header">
+          <span class="code-label bash">bash · multiple tools at once</span>
+          <button class="copy-btn" onclick="copyCode(this)">copy</button>
+        </div>
+        <pre><span class="cmd">curl</span> <span class="u">https://api.openai.com/v1/responses</span> \
+  <span class="k">-H</span> <span class="s">"Authorization: Bearer $OPENAI_API_KEY"</span> \
+  <span class="k">-H</span> <span class="s">"Content-Type: application/json"</span> \
+  <span class="k">-d</span> <span class="s">'{
+    "model": "gpt-4o",
+    "tools": [
+      { "type": "web_search_preview" },
+      { "type": "code_interpreter", "container": { "type": "auto" } }
+    ],
+    "input": "Find the latest Bitcoin price and graph the last 7 days."
+  }'</span></pre>
+      </div>
+
+      <p>Available built-in tools:</p>
+      <table class="field-table">
+        <thead><tr><th>Tool type</th><th>What it does</th></tr></thead>
+        <tbody>
+          <tr><td><span class="pill">web_search_preview</span></td><td>Live web search with citations</td></tr>
+          <tr><td><span class="pill">file_search</span></td><td>Semantic search over uploaded files / vector stores</td></tr>
+          <tr><td><span class="pill">code_interpreter</span></td><td>Python sandbox — runs code, generates files</td></tr>
+          <tr><td><span class="pill">function</span></td><td>Custom function (same as Chat Completions tool calling)</td></tr>
+          <tr><td><span class="pill">computer_use_preview</span></td><td>Control a virtual desktop (beta)</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <!-- 08 VS CHAT API -->
+    <section class="section" id="s8">
+      <div class="section-header">
+        <span class="section-num">08</span>
+        <h2 class="section-title">Responses vs <span>Chat Completions</span></h2>
+      </div>
+
+      <p>Both APIs coexist. Here's a quick migration comparison:</p>
+
+      <div class="compare">
+        <div class="compare-card">
+          <h4><span class="dot old"></span> Chat Completions (old)</h4>
+          <pre style="font-size:12px; background:none; padding:0; color:#c0c0d8;"><span class="n">"messages"</span>: [
+  {<span class="n">"role"</span>: <span class="s">"system"</span>, <span class="n">"content"</span>: <span class="s">"..."</span>},
+  {<span class="n">"role"</span>: <span class="s">"user"</span>,   <span class="n">"content"</span>: <span class="s">"..."</span>}
+]
+<span class="c">// No server-side state
+// You manage history manually
+// Tools via function definitions</span></pre>
+        </div>
+        <div class="compare-card">
+          <h4><span class="dot new"></span> Responses API (new)</h4>
+          <pre style="font-size:12px; background:none; padding:0; color:#c0c0d8;"><span class="n">"instructions"</span>: <span class="s">"..."</span>,
+<span class="n">"input"</span>: <span class="s">"..."</span>
+<span class="c">// Server-side state (store: true)
+// Continue via previous_response_id
+// Built-in hosted tools</span></pre>
+        </div>
+      </div>
+
+      <table class="field-table">
+        <thead><tr><th>Feature</th><th>Chat Completions</th><th>Responses API</th></tr></thead>
+        <tbody>
+          <tr><td>Stateful history</td><td>❌ manual</td><td>✅ server-side</td></tr>
+          <tr><td>Web search</td><td>❌</td><td>✅ built-in</td></tr>
+          <tr><td>Code interpreter</td><td>Assistants only</td><td>✅ built-in</td></tr>
+          <tr><td>Multimodal input</td><td>✅</td><td>✅</td></tr>
+          <tr><td>Streaming</td><td>✅</td><td>✅</td></tr>
+          <tr><td>System prompt</td><td><code>system</code> role</td><td><code>instructions</code> field</td></tr>
+          <tr><td>Response field</td><td><code>choices[0].message.content</code></td><td><code>output[0].content[0].text</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <span>OpenAI Responses API Tutorial — curl Edition</span>
+  <a href="https://platform.openai.com/docs/api-reference/responses" target="_blank">Official Docs ↗</a>
+</footer>
+
+<script>
+  function copyCode(btn) {
+    const pre = btn.closest('.code-block').querySelector('pre');
+    const text = pre.innerText;
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = 'copied!';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = 'copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  // Active nav highlight on scroll
+  const sections = document.querySelectorAll('.section');
+  const navItems = document.querySelectorAll('.nav-item');
+  const obs = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        navItems.forEach(n => n.classList.remove('active'));
+        const active = document.querySelector(`.nav-item[href="#${e.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { threshold: 0.4 });
+  sections.forEach(s => obs.observe(s));
+</script>
+</body>
+</html>
