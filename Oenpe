@@ -1,0 +1,11 @@
+function open-url() {
+  node -e "
+    const net = require('net');
+    const sock = process.env.VSCODE_IPC_HOOK_CLI;
+    const msg = JSON.stringify({type:'open',uris:['$1'],wait:false,pp:false});
+    const buf = Buffer.allocUnsafe(4 + Buffer.byteLength(msg));
+    buf.writeUInt32BE(Buffer.byteLength(msg), 0);
+    buf.write(msg, 4);
+    net.createConnection(sock, () => {}).write(buf);
+  "
+}
