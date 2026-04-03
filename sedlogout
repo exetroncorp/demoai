@@ -1,0 +1,13 @@
+FROM codercom/code-server:4.113.0-bookworm
+
+# Patch the logout endpoint so clicking "Logout" in code-server redirects
+# to the JupyterHub logout URL (/logout at the domain root) instead of
+# code-server's own /user/<name>/logout endpoint.
+#
+# In server-main.js, the logoutEndpoint is built as: rootEndpoint + "/logout"
+# We replace it with a hardcoded "/logout" so the browser navigates directly
+# to the JupyterHub logout, bypassing the code-server prefix entirely.
+USER root
+RUN sed -i 's|logoutEndpoint:this._environmentService.args.auth\&\&this._environmentService.args.auth!=="none"?i+"/logout":void 0|logoutEndpoint:"/logout"|g' \
+    /usr/lib/code-server/lib/vscode/out/server-main.js
+USER coder
