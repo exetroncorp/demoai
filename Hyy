@@ -1,0 +1,1 @@
+hhjkubectl get --raw "//metrics" | grep kubernetes_feature_enabled | grep UserNamespacesSupport
