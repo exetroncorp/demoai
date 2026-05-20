@@ -1,0 +1,185 @@
+#!/bin/bash
+# ============================================================================
+# Script d'installation Hermes Agent - Téléchargement, Extraction et Config
+# ============================================================================
+set -e
+
+# --- CONFIGURATION DU PROXY ET ARTIFACTORY ---
+# Modifiez ces valeurs selon l'infrastructure de votre entreprise
+PROXY_HOST="proxy.votre-entreprise.com"
+PROXY_PORT="8080"
+export ARTIFACTORY_URL="https://artifactory.votre-entreprise.com"
+
+# Configuration des variables d'environnement pour le Proxy
+export HTTP_PROXY="http://${PROXY_HOST}:${PROXY_PORT}"
+export HTTPS_PROXY="http://${PROXY_HOST}:${PROXY_PORT}"
+export http_proxy="${HTTP_PROXY}"
+export https_proxy="${HTTPS_PROXY}"
+export NO_PROXY="localhost,127.0.0.1,.votre-entreprise.com"
+export no_proxy="${NO_PROXY}"
+
+# Configuration des dépôts Artifactory
+export ARTIFACTORY_PYPI="${ARTIFACTORY_URL}/artifactory/api/pypi/pypi-remote/simple"
+export ARTIFACTORY_NPM="${ARTIFACTORY_URL}/artifactory/api/npm/npm-remote"
+
+export PIP_INDEX_URL="${ARTIFACTORY_PYPI}"
+export UV_INDEX_URL="${ARTIFACTORY_PYPI}"
+export npm_config_registry="${ARTIFACTORY_NPM}"
+export npm_config_proxy="${HTTP_PROXY}"
+export npm_config_https_proxy="${HTTPS_PROXY}"
+
+# --- 1. TÉLÉCHARGEMENT DU ZIP VIA PROXY ---
+ZIP_URL="https://github.com/nousresearch/hermes-agent/archive/refs/heads/main.zip"
+ZIP_FILE="hermes-agent.zip"
+
+echo "=== 1. Téléchargement d'Hermes Agent depuis GitHub ==="
+# Utilisation de curl avec les variables de proxy exportées plus haut
+curl -L -o "$ZIP_FILE" "$ZIP_URL"
+
+# --- 2. EXTRACTION DU ZIP ---
+echo "=== 2. Extraction de l'archive ==="
+unzip -q -o "$ZIP_FILE"
+
+# Recherche du dossier extrait (généralement hermes-agent-main)
+EXTRACTED_DIR=$(unzip -qql "$ZIP_FILE" | head -n1 | awk '{print $4}' | cut -d'/' -f1)
+
+if [ ! -d "$EXTRACTED_DIR" ] || [ -z "$EXTRACTED_DIR" ]; then
+    EXTRACTED_DIR=$(find . -maxdepth 1 -type d -name "hermes-agent*" | head -n 1)
+fi
+
+echo "[+] Entrée dans le dossier extrait : ${EXTRACTED_DIR}"
+cd "$EXTRACTED_DIR"
+HERMES_DIR="$(pwd)"
+
+# --- 3. VÉRIFICATION ET INSTALLATION DE 'UV' ---
+echo "=== 3. Vérification de 'uv' ==="
+if ! command -v uv &> /dev/null; then
+    echo "Installation de 'uv' via pip d'entreprise..."
+    pip install uv --index-url "${ARTIFACTORY_PYPI}" --proxy "${HTTP_PROXY}"
+else
+    echo "[✓] 'uv' est déjà disponible."
+fi
+
+# --- 4. CRÉATION DU VIRTUALENV ET INSTALLATION ---
+echo "=== 4. Création de l'environnement virtuel et installation des dépendances ==="
+uv venv .venv --python 3.11
+source .venv/bin/activate
+
+# Installation locale via Artifactory
+uv pip install -e ".[all]" --index-url "${ARTIFACTORY_PYPI}"
+
+# --- 5. SYNCRONISATION DE LA CONFIGURATION CONTINUE.DEV ---
+echo "=== 5. Récupération de la configuration continue.dev ==="
+python3 - << 'EOF'
+import json
+import os
+
+continue_json_path = os.path.expanduser("~/.continue/config.json")
+continue_yaml_path = os.path.expanduser("~/.continue/config.yaml")
+model_info = {}
+
+if os.path.exists(continue_json_path):
+    try:
+        with open(continue_json_path, "r") as f:
+            data = json.load(f)
+            models = data.get("models", [])
+            if models:
+                chat_model = next((m for m in models if "chat" in m.get("roles", [])), models[0])
+                model_info = {
+                    "model": chat_model.get("model"),
+                    "provider": chat_model.get("provider", "openai"),
+                    "api_key": chat_model.get("apiKey"),
+                    "base_url": chat_model.get("apiBase")
+                }
+    except Exception as e:
+        print(f"[-] Erreur de lecture de config.json: {e}")
+
+if not model_info and os.path.exists(continue_yaml_path):
+    try:
+        with open(continue_yaml_path, "r") as f:
+            current_model = {}
+            for line in f:
+                line = line.strip()
+                if line.startswith("- name:") or line.startswith("models:"):
+                    if current_model and "model" in current_model:
+                        break
+                    current_model = {}
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    k = k.strip().replace("-", "").strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k in ["model", "provider", "apiKey", "apiBase"]:
+                        current_model[k] = v
+            if current_model:
+                model_info = {
+                    "model": current_model.get("model"),
+                    "provider": current_model.get("provider", "openai"),
+                    "api_key": current_model.get("apiKey"),
+                    "base_url": current_model.get("apiBase")
+                }
+    except Exception as e:
+        print(f"[-] Erreur de lecture de config.yaml: {e}")
+
+if not model_info:
+    model_info = {
+        "model": "gpt-4o",
+        "provider": "openai",
+        "api_key": "votre-cle-ici",
+        "base_url": "https://api.openai.com/v1"
+    }
+
+hermes_home = os.path.expanduser("~/.hermes")
+os.makedirs(hermes_home, exist_ok=True)
+
+config_content = f"""model:
+  default: "{model_info['model']}"
+  provider: "{model_info['provider']}"
+"""
+if model_info.get("base_url"):
+    config_content += f"  base_url: \"{model_info['base_url']}\"\n"
+
+with open(os.path.join(hermes_home, "config.yaml"), "w") as f:
+    f.write(config_content)
+
+provider_upper = model_info['provider'].upper()
+env_map = {
+    "OPENAI": "OPENAI_API_KEY",
+    "ANTHROPIC": "ANTHROPIC_API_KEY",
+    "OPENROUTER": "OPENROUTER_API_KEY",
+    "GEMINI": "GEMINI_API_KEY"
+}
+env_var = env_map.get(provider_upper, f"{provider_upper}_API_KEY")
+
+with open(os.path.join(hermes_home, ".env"), "w") as f:
+    f.write(f"{env_var}={model_info.get('api_key', '')}\n")
+
+print(f"[+] Configuration de {model_info['model']} ({model_info['provider']}) migrée vers Hermes.")
+EOF
+
+# --- 6. CRÉATION DU LANCEUR GLOBAL ---
+echo "=== 6. Création du lanceur 'hermes' ==="
+mkdir -p "$HOME/.local/bin"
+cat <<EOF > "$HOME/.local/bin/hermes"
+#!/bin/bash
+export HTTP_PROXY="${HTTP_PROXY}"
+export HTTPS_PROXY="${HTTPS_PROXY}"
+export NO_PROXY="${NO_PROXY}"
+export http_proxy="${HTTP_PROXY}"
+export https_proxy="${HTTPS_PROXY}"
+export no_proxy="${NO_PROXY}"
+export PIP_INDEX_URL="${ARTIFACTORY_PYPI}"
+export UV_INDEX_URL="${ARTIFACTORY_PYPI}"
+
+source "${HERMES_DIR}/.venv/bin/activate"
+exec "${HERMES_DIR}/.venv/bin/hermes" "\$@"
+EOF
+chmod +x "$HOME/.local/bin/hermes"
+
+# Nettoyage optionnel du fichier ZIP téléchargé à la racine
+rm -f "../$ZIP_FILE"
+
+echo "============================================================================"
+echo "[✓] Téléchargement, extraction et installation terminés."
+echo "Projet extrait dans : ${HERMES_DIR}"
+echo "Lanceur généré dans  : $HOME/.local/bin/hermes"
+echo "============================================================================"
