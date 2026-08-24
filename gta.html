@@ -46,6 +46,9 @@
     box-shadow:0 14px 44px rgba(0,0,0,.45), 0 0 30px rgba(255,200,90,.06); }
   #objective.show { display:block; animation:dropIn .35s cubic-bezier(.2,1.4,.4,1); }
   #objective.low { --oc:#ff5b5b; }
+  /* idle state: no active mission -> panel guides you to the nearest beacon */
+  #objective.idle { --oc:#53e0f0; }
+  #objective.idle #objtimer, #objective.idle #objdesc { display:none; }
   @keyframes dropIn { from{ transform:translate(-50%,-16px); opacity:0; } }
   #objtitle { font-family:'Bebas Neue'; font-size:24px; letter-spacing:3px; color:var(--oc,#ffd166); }
   #objtitle::before { content:'◈ '; opacity:.85; }
@@ -1118,6 +1121,7 @@ function initThree() {
   const sc = sunLight.shadow.camera;
   sc.left = -115; sc.right = 115; sc.top = 115; sc.bottom = -115; sc.near = 20; sc.far = 420;
   sunLight.shadow.bias = -0.0005;
+  sunLight.shadow.normalBias = .05;
   scene.add(sunLight); scene.add(sunLight.target);
 
   // --- sky dome (with sun-glow for sunrise / sunset) ---
@@ -1557,7 +1561,9 @@ function batchQuads(list, mat, y) {
   g.setIndex(idx);
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  const m = new THREE.Mesh(g, mat); m.receiveShadow = true;
+  const m = new THREE.Mesh(g, mat);
+  mat.polygonOffset = true; mat.polygonOffsetFactor = -2; mat.polygonOffsetUnits = -6;
+  m.receiveShadow = true;
   scene.add(m); return m;
 }
 
@@ -1601,7 +1607,8 @@ function buildHelipad() {
   const disc = new THREE.Mesh(new THREE.CylinderGeometry(6.4, 6.6, .14, 26),
     new THREE.MeshLambertMaterial({ color: 0x2e333a }));
   disc.position.y = .07; disc.receiveShadow = true; g.add(disc);
-  const wm = new THREE.MeshBasicMaterial({ color: 0xd8dde2 });
+  const wm = new THREE.MeshBasicMaterial({ color: 0xd8dde2,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -6 });
   const ring = new THREE.Mesh(new THREE.RingGeometry(5.85, 6.2, 40), wm.clone());
   ring.material.transparent = true; ring.material.opacity = .75;
   ring.rotation.x = -Math.PI / 2; ring.position.y = .15; g.add(ring);
@@ -1632,17 +1639,21 @@ function buildCity() {
   water.rotation.x = -Math.PI / 2; water.position.y = -.5;
   scene.add(water);
   // surf foam hugging the shoreline
+  // (overlays sit well clear of the water plane + polygonOffset -> no z-fight shimmer)
   foamRing = new THREE.Mesh(new THREE.RingGeometry(ISLAND / 2 + 3, ISLAND / 2 + 24, 56),
-    new THREE.MeshBasicMaterial({ color: 0xeaf6fb, transparent: true, opacity: .16, depthWrite: false }));
-  foamRing.rotation.x = -Math.PI / 2; foamRing.position.y = -.44;
+    new THREE.MeshBasicMaterial({ color: 0xeaf6fb, transparent: true, opacity: .16, depthWrite: false,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -8 }));
+  foamRing.rotation.x = -Math.PI / 2; foamRing.position.y = -.38;
   scene.add(foamRing);
   waterShimmer = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200),
-    new THREE.MeshBasicMaterial({ color: 0x6db3d9, transparent: true, opacity: .14 }));
-  waterShimmer.rotation.x = -Math.PI / 2; waterShimmer.position.y = -.42;
+    new THREE.MeshBasicMaterial({ color: 0x6db3d9, transparent: true, opacity: .14,
+      polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -11 }));
+  waterShimmer.rotation.x = -Math.PI / 2; waterShimmer.position.y = -.33;
   scene.add(waterShimmer);
   waterShimmer2 = new THREE.Mesh(new THREE.PlaneGeometry(3200, 3200),
-    new THREE.MeshBasicMaterial({ color: 0x9fd6ec, transparent: true, opacity: .08 }));
-  waterShimmer2.rotation.x = -Math.PI / 2; waterShimmer2.position.y = -.34;
+    new THREE.MeshBasicMaterial({ color: 0x9fd6ec, transparent: true, opacity: .08,
+      polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -15 }));
+  waterShimmer2.rotation.x = -Math.PI / 2; waterShimmer2.position.y = -.26;
   scene.add(waterShimmer2);
 
   const sand = new THREE.Mesh(flat(new THREE.BoxGeometry(ISLAND + 34, 1.4, ISLAND + 34)),
@@ -1663,7 +1674,7 @@ function buildCity() {
         dashes.push({ x: A.x + ux * s, z: A.z + uz * s, hw: ux ? .18 : 2, hl: ux ? 2 : .18 });
     }
   }
-  batchQuads(dashes, new THREE.MeshBasicMaterial({ color: PAL.marking }), .05);
+  batchQuads(dashes, new THREE.MeshBasicMaterial({ color: PAL.marking }), .07);
   for (const n of NODES) {
     let major = 0;
     for (const a of ADJ[NODES.indexOf(n)]) if (a.w >= 12) major++;
@@ -1679,7 +1690,7 @@ function buildCity() {
       }
     }
   }
-  batchQuads(zebra, new THREE.MeshBasicMaterial({ color: 0xcfd4da, transparent: true, opacity: .85 }), .055);
+  batchQuads(zebra, new THREE.MeshBasicMaterial({ color: 0xcfd4da, transparent: true, opacity: .85 }), .078);
 
   // ---- grime patches & manhole covers along random edges (baked: 2 draw calls) ----
   const patchQ = [], manQ = [];
@@ -1703,8 +1714,8 @@ function buildCity() {
     const off = choice([-1, 1]) * e.w * .18;
     manQ.push({ x: A.x + ux * len * t + uz * off, z: A.z + uz * len * t - ux * off, hw: .5, hl: .5 });
   }
-  batchQuads(patchQ, new THREE.MeshBasicMaterial({ color: 0x2b2e33, transparent: true, opacity: .5 }), .045);
-  batchQuads(manQ, new THREE.MeshBasicMaterial({ color: 0x1e2126, transparent: true, opacity: .9 }), .046);
+  batchQuads(patchQ, new THREE.MeshBasicMaterial({ color: 0x2b2e33, transparent: true, opacity: .5 }), .06);
+  batchQuads(manQ, new THREE.MeshBasicMaterial({ color: 0x1e2126, transparent: true, opacity: .9 }), .052);
 
   // ---- blocks ----
   const { map: winMap, emi: winEmi } = makeBuildingTextures();
@@ -1738,8 +1749,9 @@ function buildCity() {
       return h;
     };
     const glassMat = (col, emi) => {
+      // near-opaque glass: keeps a hint of sheen without see-through walls
       const gm = new THREE.MeshPhongMaterial({ color: col, specular: 0xd8ecf8,
-        shininess: 110, transparent: true, opacity: .55, side: THREE.DoubleSide,
+        shininess: 110, transparent: true, opacity: .88, side: THREE.DoubleSide,
         emissive: emi || 0x27405c, emissiveIntensity: 0 });
       winMats.push(gm);
       return gm;
@@ -1907,7 +1919,7 @@ function buildCity() {
 
     // interior plank floor + garden path to the street
     batchQuads([{ x: HX, z: HZ, hw: W / 2 - TH, hl: D / 2 - TH }],
-      new THREE.MeshLambertMaterial({ color: 0xb98d5f, map: texFor('plank') }), gy + .005);
+      new THREE.MeshLambertMaterial({ color: 0xb98d5f, map: texFor('plank') }), gy + .02);
     pathQ.push({ x: HX, z: HZ + D / 2 + 2.8, hw: 1.3, hl: 3.4 });
 
     // walls (south face has a 1.8 m doorway gap)
@@ -2278,7 +2290,7 @@ function buildCity() {
     slab.position.set(cx, 0, cz); slab.receiveShadow = true;
     scene.add(slab);
     slabRects.push({ x: cx, z: cz, hw: hx, hl: hz, park: isPark, yard: isYard });
-    curbItems.push({ geo: PROP.unit, x: cx, y: -.03, z: cz, sx: B[2] + .6, sy: .5, sz: B[3] + .6 });
+    curbItems.push({ geo: PROP.unit, x: cx, y: -.09, z: cz, sx: B[2] + .6, sy: .5, sz: B[3] + .6 });
 
     // expansion joints score the concrete slabs (parks & the house keep theirs clean)
     if (!isPark && !flags.includes('h')) {
@@ -2536,9 +2548,10 @@ function buildCity() {
   }
 
   // ---- bake everything static into merged meshes ----
-  if (paveQ.length) batchQuads(paveQ, new THREE.MeshLambertMaterial({ color: 0xb9b4ac }), .24);
-  if (pathQ.length) batchQuads(pathQ, new THREE.MeshLambertMaterial({ color: 0xcabb9d }), .235);
-  if (jointQ.length) batchQuads(jointQ, new THREE.MeshBasicMaterial({ color: 0x878d93, transparent: true, opacity: .38 }), .228);
+  // (decals float a few cm above the slabs; batchQuads adds polygonOffset -> no flicker)
+  if (paveQ.length) batchQuads(paveQ, new THREE.MeshLambertMaterial({ color: 0xb9b4ac }), .26);
+  if (pathQ.length) batchQuads(pathQ, new THREE.MeshLambertMaterial({ color: 0xcabb9d }), .252);
+  if (jointQ.length) batchQuads(jointQ, new THREE.MeshBasicMaterial({ color: 0x878d93, transparent: true, opacity: .38 }), .244);
 
   const curbMesh = new THREE.Mesh(mergeGeos(curbItems), new THREE.MeshLambertMaterial({ color: PAL.curbTop }));
   curbMesh.receiveShadow = true; scene.add(curbMesh);
@@ -5791,6 +5804,22 @@ function missionTarget() {
   return null;
 }
 
+// compass direction from (x1,z1) to (x2,z2) — north is -Z, matches the minimap
+function cardinalDir(dx, dz) {
+  if (Math.hypot(dx, dz) < 4) return '';
+  const a = Math.atan2(dx, -dz);
+  return ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(a / (Math.PI / 4)) & 7];
+}
+// nearest visible mission-start beacon (used by HUD, arrow & big map when idle)
+function nearestJobMarker() {
+  let best = null, bd = 1e9;
+  for (const mk of markers) if (mk.g.visible) {
+    const d = Math.hypot(mk.x - player.pos.x, mk.z - player.pos.z);
+    if (d < bd) { bd = d; best = mk; }
+  }
+  return best ? { mk: best, d: bd } : null;
+}
+
 function ensureDirArrow() {
   if (dirArrow) return;
   const mat = new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true, opacity: .92 });
@@ -5808,9 +5837,14 @@ function updateMission(dt) {
   for (const m of markers) if (m.g.visible) animBeacon(m.g);
   if (objMarker && objMarker.visible) animBeacon(objMarker);
 
-  // guidance arrow hovering over the player (or the car roof when driving)
+  // guidance arrow hovering over the player (or the car roof when driving).
+  // with no active mission it points at the nearest job beacon instead.
   if (running && !player.dead && !player.inHeli) {
-    const tgt = missionTarget();
+    let tgt = missionTarget();
+    if (!tgt && !mission) {
+      const nj = nearestJobMarker();
+      if (nj) tgt = { x: nj.mk.x, z: nj.mk.z, kind: 'go' };
+    }
     if (tgt) {
       ensureDirArrow();
       dirArrow.visible = true;
@@ -5828,7 +5862,10 @@ function updateMission(dt) {
   if (!mission) {
     if (markerShowT > 0) {
       markerShowT -= dt;
-      if (markerShowT <= 0) markers.forEach(m => m.g.visible = true);
+      if (markerShowT <= 0) {
+        markers.forEach(m => m.g.visible = true);
+        notify('NEW JOBS AVAILABLE — FOLLOW YOUR ARROW', '#53e0f0');
+      }
     } else if (running && !player.dead) {
       for (const m of markers) {
         if (!m.g.visible) continue;
@@ -6002,6 +6039,7 @@ function banner(a, b, cls = 'gold') {
   setTimeout(() => el.classList.remove('show'), 3600);
 }
 function setObjective(t, d) {
+  $('objective').classList.remove('idle');
   $('objective').classList.add('show');
   $('objtitle').textContent = t;
   $('objdesc').textContent = d;
@@ -6223,7 +6261,11 @@ function drawBigMap() {
   } else {
     $('bmTitle').textContent = 'FREE ROAM';
     $('bmDesc').textContent = 'Drive into a cyan beacon to start a job. Press M anytime to check this map.';
-    $('bmDist').textContent = '';
+    const nj = (running && !player.dead) ? nearestJobMarker() : null;
+    if (nj) {
+      const dir = cardinalDir(nj.mk.x - player.pos.x, nj.mk.z - player.pos.z);
+      $('bmDist').textContent = '» NEAREST JOB · ' + Math.round(nj.d) + ' M' + (dir ? ' · HEAD ' + dir : '');
+    } else $('bmDist').textContent = '';
     $('bmTime').textContent = '';
   }
 }
@@ -6626,10 +6668,21 @@ function updateHUD(rdt) {
   if (zEl.textContent !== zn) zEl.textContent = zn;
   // live objective instruction + distance
   const tgt = (running && !paused && !player.dead) ? missionTarget() : null;
+  const objEl = $('objective');
   if (tgt) {
     const dd = Math.hypot(tgt.x - player.pos.x, tgt.z - player.pos.z);
     $('objdist').textContent = '» ' + tgt.label + ' · ' + Math.round(dd) + ' M';
     $('objdist').classList.add('show');
+  } else if (running && !paused && !player.dead && !mission) {
+    // idle: turn the panel into a "find a job" guide toward the nearest beacon
+    const nj = nearestJobMarker();
+    if (nj) {
+      objEl.classList.add('show', 'idle');
+      $('objtitle').textContent = 'FIND A JOB';
+      const dir = cardinalDir(nj.mk.x - player.pos.x, nj.mk.z - player.pos.z);
+      $('objdist').textContent = '» NEAREST JOB · ' + Math.round(nj.d) + ' M' + (dir ? ' · HEAD ' + dir : '');
+      $('objdist').classList.add('show');
+    } else clearObjective();
   } else $('objdist').classList.remove('show');
   // safehouse interaction prompt
   {
