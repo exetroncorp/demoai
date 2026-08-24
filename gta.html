@@ -3527,7 +3527,18 @@ function spawnPed(isGang = false, gx, gz) {
     gunTip = gm.userData.tip;
   }
   let x, z;
-  if (gx !== undefined) { x = gx + rand(-14, 14); z = gz + rand(-14, 14); }
+  if (gx !== undefined) {
+    x = gx + rand(-14, 14); z = gz + rand(-14, 14);
+    // never spawn inside a building — fall back to the street by the anchor
+    if (pointInBuilding(x, z, .8)) {
+      [x, z] = snapToRoadPoint(gx, gz);
+      x += rand(-4, 4); z += rand(-4, 4);
+      for (let t3 = 0; t3 < 8 && pointInBuilding(x, z, .8); t3++) {
+        const [rx3, rz3] = snapToRoadPoint(x, z);
+        x = rx3 + rand(-5, 5); z = rz3 + rand(-5, 5);
+      }
+    }
+  }
   else {
     const B = choice(BLOCKS);
     const side = choice([-1, 1]);
@@ -3903,25 +3914,31 @@ function spotFree(x, z, d) {
   return true;
 }
 
+// driving-lane distance from the street centreline. On wide streets it's
+// capped so lanes clear the kerb-side parking row (cars hug at w/2 - 1.75).
+const laneO = w => w >= 13 ? clamp(Math.min(w * .22, w / 2 - 4.35), 2.1, 4.5)
+                           : clamp(w * .22, 2.2, 3);
+
 // lane offset: right-hand side of travel direction, scaled to street width
 const _laneOff = (e, rev) => {
   const A = NODES[e.a], B = NODES[e.b];
   const len = Math.hypot(B.x - A.x, B.z - A.z) || 1;
   const ux = (B.x - A.x) / len, uz = (B.z - A.z) / len;
-  const s = rev ? -1 : 1, o = clamp(e.w * .22, 2.2, 4.5);
+  const s = rev ? -1 : 1, o = laneO(e.w);
   return [ux * s, uz * s, -uz * o * s, ux * o * s]; // dirx, dirz, perpX, perpZ
 };
 
 function spawnParked(n) {
   let placed = 0, guard = 0;
-  while (placed < n && guard++ < n * 30) {
+  while (placed < n && guard++ < n * 60) {
     const e = choice(EDGES);
+    if (e.w < 13) continue;                        // narrow streets stay clear
     const A = NODES[e.a], B = NODES[e.b];
     const len = Math.hypot(B.x - A.x, B.z - A.z);
     if (len < 26) continue;
     const ux = (B.x - A.x) / len, uz = (B.z - A.z) / len;
     const t = rand(12, len - 12);
-    const side = choice([-1, 1]) * (e.w / 2 - 2.1);
+    const side = choice([-1, 1]) * (e.w / 2 - 1.75);   // tight against the curb
     const x = A.x + ux * t - uz * side, z = A.z + uz * t + ux * side;
     if (nearIntersection(x, z) || !spotFree(x, z, 8)) continue;
     spawnCar(x, z, Math.atan2(ux, uz) + rand(-.05, .05), { mode: 'parked' });
@@ -3943,6 +3960,7 @@ function spawnTraffic(n) {
     const c = spawnCar(x, z, Math.atan2(ux, uz) + (rev ? Math.PI : 0), { mode: 'traffic' });
     c.pn = rev ? e.b : e.a;
     c.gn = rev ? e.a : e.b;
+    c.laneO = laneO(e.w);
     c.spd = c.cruise * .6;
     placed++;
   }
@@ -3955,26 +3973,40 @@ function aiTraffic(c, dt) {
     const dx = G.x - A.x, dz = G.z - A.z;
     const len = Math.hypot(dx, dz) || 1;
     const ux = dx / len, uz = dz / len;
-    const o = 2.6;
-    const lx = G.x - uz * o, lz = G.z + ux * o;   // lane-offset node approach point
-    const distN = Math.hypot(lx - c.x, lz - c.z);
-    const hT = Math.atan2(lx - c.x, lz - c.z);
-    // obstacle probe
+    // obstacle probe — also notes which side blockers sit on
     const fx = Math.sin(c.h), fz = Math.cos(c.h);
-    let blocked = false;
+    let blocked = false, latSum = 0, latN = 0;
     const probe = (ox, oz, r) => {
       const rx = ox - c.x, rz = oz - c.z;
       const ah = rx * fx + rz * fz;
-      if (ah > 1 && ah < 10 && Math.abs(rx * fz - rz * fx) < r) blocked = true;
+      if (ah > 1 && ah < 10 && Math.abs(rx * fz - rz * fx) < r) {
+        blocked = true;
+        latSum += rx * fz - rz * fx > 0 ? 1 : -1; latN++;
+      }
     };
     for (const o2 of cars) { if (o2 !== c && !o2.dead) probe(o2.x, o2.z, 3.3); }
     if (!player.inCar && !player.dead) probe(player.pos.x, player.pos.z, 2.6);
     for (const p of peds) { if (!p.dead) probe(p.x, p.z, 2.3); }
-    const tgt = blocked ? 0 : (distN < 12 ? c.cruise * .55 : c.cruise);
-    c.brake = blocked || tgt < c.spd - 2;
-    c.spd += clamp(tgt - c.spd, -32 * dt, 8 * dt);
+    // slide the approach point toward the free side so we go around blockers
+    const o = (c.laneO || 2.6) + (latN ? Math.sign(latSum || 1) * 1.5 : 0);
+    const lx = G.x - uz * o, lz = G.z + ux * o;   // lane-offset node approach point
+    const distN = Math.hypot(lx - c.x, lz - c.z);
+    const hT = Math.atan2(lx - c.x, lz - c.z);
+    // un-jam: barely moving with nothing ahead -> back up for a moment
+    c.stuckT = !blocked && Math.abs(c.spd) < 1.2 ? c.stuckT + dt : 0;
+    if (c.stuckT > 2 && c.revT <= 0) { c.revT = 1.1; c.stuckT = 0; }
     const rate = 2.4 * clamp(Math.abs(c.spd) / 6, .35, 1);
-    c.h += clamp(angDiff(hT, c.h), -rate * dt, rate * dt);
+    if (c.revT > 0) {
+      c.revT -= dt;
+      c.brake = false;
+      c.spd += clamp(-5 - c.spd, -24 * dt, 24 * dt);
+      c.h += clamp(angDiff(hT, c.h), -rate * dt, rate * dt);
+    } else {
+      const tgt = blocked ? 0 : (distN < 12 ? c.cruise * .55 : c.cruise);
+      c.brake = blocked || tgt < c.spd - 2;
+      c.spd += clamp(tgt - c.spd, -32 * dt, 8 * dt);
+      c.h += clamp(angDiff(hT, c.h), -rate * dt, rate * dt);
+    }
     if (distN < 4.5) {
       const opts = [];
       for (const a of ADJ[c.gn]) {
@@ -4015,8 +4047,9 @@ function resolveWorldCar(c, r) {
     }
   }
   const B = HALF + 2;
-  if (Math.abs(c.x) > B) { c.x = Math.sign(c.x) * B; c.hitNx = -Math.sign(c.x); pushed = true; }
-  if (Math.abs(c.z) > B) { c.z = Math.sign(c.z) * B; c.hitNz = -Math.sign(c.z); pushed = true; }
+  // border normals point toward the wall — same convention as building hits
+  if (Math.abs(c.x) > B) { c.x = Math.sign(c.x) * B; c.hitNx = Math.sign(c.x); pushed = true; }
+  if (Math.abs(c.z) > B) { c.z = Math.sign(c.z) * B; c.hitNz = Math.sign(c.z); pushed = true; }
   return pushed;
 }
 
@@ -4052,13 +4085,23 @@ function stepCar(c, dt) {
 
   if (resolveWorldCar(c, 1.35)) {
     if (s0 > 6) crashFX(c, s0);
-    c.vx *= -.3; c.vz *= -.3;
+    // kill only the into-wall velocity component — tangential speed survives,
+    // so cars slide along walls instead of gluing to them
+    if (c.hitNx && c.hitNz) { c.vx *= -.3; c.vz *= -.3; }        // corner pinch fallback
+    else if (c.hitNx) { const vn = c.vx * c.hitNx; if (vn > 0) c.vx -= c.hitNx * vn * 1.3; }
+    else if (c.hitNz) { const vn = c.vz * c.hitNz; if (vn > 0) c.vz -= c.hitNz * vn * 1.3; }
     if (c.driver !== 'player') { c.spd *= .25; c.stunT = Math.max(c.stunT, .7); }
-    // glancing wall contact converts tangential motion into a fishtail spin
-    if (c.hitNx || c.hitNz) {
-      const vt = c.vx * -c.hitNz + c.vz * c.hitNx;
-      c.spin += clamp(vt * .09 * clamp(s0 / 14, .25, 1), -1.6, 1.6);
+    // glancing impact kicks the tail out — but only on the INITIAL hit:
+    // a per-frame feed would pump the spin into an endless whip on scrapes
+    const wallHit = !!(c.hitNx || c.hitNz);
+    if (wallHit) {
+      if (!c.wallHit && s0 > 8) {
+        const vt = c.vx * -c.hitNz + c.vz * c.hitNx;
+        c.spin += clamp(vt * .07 * clamp(s0 / 14, .25, 1), -1.15, 1.15);
+      }
+      c.spin *= Math.exp(-3.5 * dt);   // sustained grind damps yaw back out
     }
+    c.wallHit = wallHit;
   }
 
   // ---- suspension: damped spring toward road height ----
@@ -5698,20 +5741,33 @@ function makeBeacon(colorHex) {
 function recolorBeacon(g, hex) { g.traverse(o => { if (o.isMesh) o.material.color.setHex(hex); }); }
 
 function setupMissionMarkers() {
-  // beacons on a few well-sized blocks around town
+  // beacons beside a few well-sized blocks around town — snapped to the
+  // street next to the block, since block centres are covered by buildings
   const spots = [];
   for (let i = 0; i < BLOCKS.length; i++) {
     const B = BLOCKS[i];
     if (B[2] >= 34 && B[3] >= 28 && B[5].indexOf('p') < 0) spots.push(i);
   }
   for (let i = spots.length - 1; i > 0; i--) { const j = randi(0, i); [spots[i], spots[j]] = [spots[j], spots[i]]; }
-  for (let k = 0; k < 3; k++) {
-    const B = BLOCKS[spots[k]];
-    const x = B[0], z = B[1];
+  for (let k = 0, s = 0; k < 3 && s < spots.length; s++) {
+    const B = BLOCKS[spots[s]];
+    // curb-side position: 3 units from the road toward the block centre.
+    // validated against every collider — landmark footprints can reach past
+    // the usual margin, so fall back to the road point itself if blocked
+    const [rx, rz] = snapToRoadPoint(B[0], B[1]);
+    let dx = B[0] - rx, dz = B[1] - rz;
+    const dl = Math.hypot(dx, dz) || 1;
+    const cands = [[rx + dx / dl * 3, rz + dz / dl * 3], [rx, rz]];
+    let px = 0, pz = 0, ok = false;
+    for (const [cx2, cz2] of cands)
+      if (!pointInBuilding(cx2, cz2, 3.4)) { px = cx2; pz = cz2; ok = true; break; }
+    if (!ok) continue;
+    if (markers.some(m => Math.hypot(m.x - px, m.z - pz) < 60)) continue;
     const b = makeBeacon(0x53e0f0);
-    b.position.set(x, groundY(x, z), z);
+    b.position.set(px, groundY(px, pz), pz);
     scene.add(b);
-    markers.push({ g: b, x, z });
+    markers.push({ g: b, x: px, z: pz });
+    k++;
   }
   objMarker = makeBeacon(0xffc94d);
   objMarker.visible = false;
@@ -5724,8 +5780,16 @@ function startMission() {
   if (type === 'delivery' && !cars.some(c => !c.isCop && !c.dead && c.driver !== 'player')) type = 'race';
 
   if (type === 'delivery') {
+    // farthest target that isn't wedged against the invisible border walls
+    const EDGE = HALF - 30;
     let best = null, bd = -1;
     for (const c of cars) {
+      if (c.isCop || c.dead || c.driver === 'player') continue;
+      if (Math.abs(c.x) > EDGE || Math.abs(c.z) > EDGE) continue;
+      const d = Math.hypot(c.x - player.pos.x, c.z - player.pos.z);
+      if (d > bd) { bd = d; best = c; }
+    }
+    if (!best) for (const c of cars) {           // fallback: any drivable car
       if (c.isCop || c.dead || c.driver === 'player') continue;
       const d = Math.hypot(c.x - player.pos.x, c.z - player.pos.z);
       if (d > bd) { bd = d; best = c; }
