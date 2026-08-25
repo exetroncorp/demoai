@@ -1,0 +1,16 @@
+# One headless Service per workspace (create it together with the workspace pod).
+# No `ports` section on purpose: a headless Service (clusterIP: None) has no
+# ClusterIP and kube-proxy never touches it, so DNS resolves straight to the
+# pod IP and nginx can reach ANY port the user starts inside the pod.
+apiVersion: v1
+kind: Service
+metadata:
+  name: workspace-ess696        # must be workspace-<uid> to match the nginx config
+  namespace: default            # change to your workspaces namespace
+spec:
+  clusterIP: None
+  # Uncomment if you must reach the pod before it reports Ready:
+  # publishNotReadyAddresses: true
+  selector:
+    app: workspace              # match your workspace pod labels
+    uid: ess696
